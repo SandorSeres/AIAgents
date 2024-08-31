@@ -10,6 +10,7 @@ License: [Creative Commons Zero v1.0 Universal]
 import json
 import os
 import logging
+import asyncio
 
 class Memory:
     """
@@ -124,11 +125,17 @@ class Memory:
             "long_term_memory": self.long_term_memory,
             "tool_history": self.tool_history
         }
+        
+        # Check if any items in the data dictionary are coroutines and await them
+        for key, value in data.items():
+            if asyncio.iscoroutine(value):
+                raise TypeError(f"Cannot serialize coroutine in '{key}'. Ensure all async operations are awaited.")
+        
         os.makedirs(os.path.dirname(self.memory_file), exist_ok=True)
         with open(self.memory_file, 'w') as file:
             json.dump(data, file, indent=4)
         self.reset_short_term()
-
+        
     def load_long_term_memory(self):
         """
         Loads the long-term memory and tool history from a file. If the file does not exist, initializes with empty lists.

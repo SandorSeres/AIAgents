@@ -203,7 +203,40 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str):
             del ws_clients[user_id]  # Remove the WebSocket object with its identifier
 
 # Enhanced monitoring and snapshot function
-def create_system_snapshot(state):
+async def get_queue_items(queue):
+    """
+    Function Name: get_queue_items
+    Description: Helper function to retrieve all items currently in an asyncio.Queue without removing them.
+    
+    Parameters:
+        queue (asyncio.Queue): The asyncio queue from which to retrieve items.
+    
+    Returns:
+        list: A list of items currently in the queue.
+    """
+    items = []
+    temp_queue = asyncio.Queue()  # Temporary queue to hold items
+
+    try:
+        logging.info("Starting to retrieve items from queue...")
+        while not queue.empty():
+            item = await queue.get()
+            logging.info(f"Item retrieved: {item}")
+            items.append(item)
+            await temp_queue.put(item)  # Put it into the temporary queue
+
+        # Put all items back into the original queue
+        while not temp_queue.empty():
+            item = await temp_queue.get()
+            await queue.put(item)
+        
+        logging.info(f"All items retrieved from queue: {items}")
+    except Exception as e:
+        logging.error(f"Error while retrieving items from queue: {e}", exc_info=True)
+
+    return items
+
+async def create_system_snapshot(state):
     """
     Function Name: create_system_snapshot
     Description: Captures the current state of the system, including agent states, current tasks, and interactions. 
@@ -215,16 +248,35 @@ def create_system_snapshot(state):
     Returns:
         dict: A snapshot of the current system state.
     """
-    snapshot = {
-        "timestamp": datetime.now().isoformat(),
-        "agents_state": {role_name: agent.get_state() for role_name, agent in state.all_agents.items()},
-        "current_tasks": list(state.task_queue.queue),
-        "user_to_agent": state.user_to_agent,
-        "interaction": state.interaction
-    }
-    state.snapshot_history.append(snapshot)
-    logging.info(f"Snapshot created: {snapshot}")
-    return snapshot
+    try:
+        logging.info("Creating system snapshot...")
+
+        # Retrieve current tasks from the queue
+        current_tasks = await get_queue_items(state.task_queue)  # Await the async function to get queue items
+        logging.info(f"Current tasks retrieved: {current_tasks}")
+
+        # Capture the state of each agent
+        agents_state = {role_name: agent.get_state() for role_name, agent in state.all_agents.items()}
+        logging.info(f"Agent states captured: {agents_state}")
+
+        # Build the snapshot dictionary
+        snapshot = {
+            "timestamp": datetime.now().isoformat(),
+            "agents_state": agents_state,
+            "current_tasks": current_tasks,
+            "user_to_agent": state.user_to_agent,
+            "interaction": state.interaction
+        }
+
+        # Append the snapshot to the session history
+        state.snapshot_history.append(snapshot)
+        logging.info(f"Snapshot created and added to history: {snapshot}")
+
+        return snapshot
+
+    except Exception as e:
+        logging.error(f"Error while creating system snapshot: {e}", exc_info=True)
+        return None
 
 # Main task execution function (orchestration layer)
 async def execute_tasks(state, step_name):
@@ -238,9 +290,8 @@ async def execute_tasks(state, step_name):
         step_name (str): The name of the step to be executed.
     """
     from human_agent import HumanAgent
-    from camel_agent import CAMELAgent  # Import within function to avoid circular import issues
+    from camel_agent import CAMELAgent
 
-    # Check if the 'steps' key exists
     if "steps" not in state.variables:
         logging.error("The 'steps' key is missing from the configuration.")
         await send_response(state.global_channel, "Configuration error: 'steps' key is missing.")
@@ -248,8 +299,6 @@ async def execute_tasks(state, step_name):
         return
 
     steps = state.variables.get("steps", {})
-
-    # If there is only one step, work with it
     if len(steps) == 1:
         step_name = list(steps.keys())[0]
 
@@ -261,23 +310,22 @@ async def execute_tasks(state, step_name):
         return
 
     participants = flow['participants']
-    state.agents = {}
     state.agents['ChatManager'] = state.all_agents.get("ChatManager").clone()
-    
+    logging.info(f"ChatManager cloned with state: {state.agents['ChatManager'].get_state()}")
+
     for name in participants:
         if name in state.all_agents:
             state.agents[name] = state.all_agents.get(name).clone()
+            logging.info(f"Cloned agent {name} with state: {state.agents[name].get_state()}")
         else:
             logging.error(f"Agent '{name}' not found in state.all_agents")
 
-    # Verify that agents are correctly initialized
     for role_name, agent in state.agents.items():
         if agent.pre_processing_tools:
             logging.info(f"Agent: {role_name}, pre-processing tools: {[tool.__class__.__name__ for tool in agent.pre_processing_tools]}")
         if agent.post_processing_tools:
             logging.info(f"Agent: {role_name}, post-processing tools: {[tool.__class__.__name__ for tool in agent.post_processing_tools]}")
 
-    # Initialize interaction
     manager_msg = copy.deepcopy(state.variables.get("inputs", {}))
     manager_msg["goal"] = flow
     inputs = manager_msg
@@ -286,54 +334,48 @@ async def execute_tasks(state, step_name):
     n = 0
     chat_manager = state.agents['ChatManager']
 
-    # Task execution loop
     while n < chat_turn_limit:
         n += 1
-
+        logging.info(f"Starting chat turn {n}")
         retry = 0
-        # Build context for the current step
-        context = {
-            "input": inputs,
-            "previous_response": assistant_response
-        }
+        context = {"input": inputs, "previous_response": assistant_response}
+        logging.info('1')
+        await create_system_snapshot(state)
+        logging.info('2')
 
-        # Capture system state before execution
-        create_system_snapshot(state)
-
-        # Retry if the llm response was not clear
         while retry < 4:
             try:
                 manager_msg = {'role': 'user', 'content': json.dumps(context)}
-                # Flow manager step
-                manager_output = chat_manager.step(manager_msg)
+                logging.info('3')
+                manager_output = await chat_manager.step(manager_msg)
+                logging.info('4')
                 await send_response(state.global_channel, manager_output)
+                logging.info('5')
 
-                # Check for task completion
                 if "CAMEL_TASK_DONE" in manager_output:
                     logging.info("Task done!")
                     state.started = False
                     break
 
+                logging.info('6')
                 parsed_instruction = parse_user_instruction(manager_output)
-
+                logging.info('7')
                 assistant_name = parsed_instruction["Action"]
                 if assistant_name not in state.agents:
+                    logging.info('8')
                     logging.info(f"No agent found with the name '{assistant_name}'")
-                    logging.info(f"The previous response was:  '{context['previous_response']}'")
                     assistant_response = f"Assistant name unknown. Context: {assistant_response}"
                     retry += 1
                     continue
+                logging.info('9')
                 break
             except Exception as e:
                 logging.error(f"Error in task execution loop: {e}", exc_info=True)
                 retry += 1
                 await asyncio.sleep(1)
+        logging.info('10')
 
         if not state.started:
-            break
-
-        if assistant_name not in state.agents:
-            logging.error(f"No agent found with the name '{assistant_name}'")
             break
 
         assistant_agent = state.agents[assistant_name]
@@ -341,10 +383,11 @@ async def execute_tasks(state, step_name):
             'role': 'user',
             'content': f"Instruction: {parsed_instruction['Question']}\nThought: {parsed_instruction['Thought']}\nAction Input: {parsed_instruction['Action Input']}\nInput: {inputs}\nPrevious response: {assistant_response}"
         }
+
         logging.info(f"AI user (ChatManager): {assistant_msg}")
         if isinstance(assistant_agent, HumanAgent):
-            state.expected_human_agent = assistant_name  # Set the expected human agent
-            state.task_queue.put(parsed_instruction['Action Input'])
+            state.expected_human_agent = assistant_name
+            await state.task_queue.put(parsed_instruction['Action Input'])
             logging.info("Chatmanager put question to task_queue!")
             await send_task_to_human_agent(state, assistant_name, parsed_instruction['Action Input'])
             response = await wait_for_human_response(state, assistant_name)
@@ -352,12 +395,19 @@ async def execute_tasks(state, step_name):
                 logging.error(f"No response received from {assistant_name}")
                 break
             assistant_msg['content'] += f"\nHuman response: {response}"
-            state.expected_human_agent = None  # Reset after response is received
+            state.expected_human_agent = None
+
 
         # Assistant step
+        logging.info(f"Preparing to send the following message to {assistant_name}: {assistant_msg}")
+
         for i in range(3):
             try:
-                assistant_response = assistant_agent.step(assistant_msg)
+                # Handle both async and sync step methods
+                if asyncio.iscoroutinefunction(assistant_agent.step):
+                    assistant_response = await assistant_agent.step(assistant_msg)
+                else:
+                    assistant_response = assistant_agent.step(assistant_msg)
                 logging.info(f"AI Assistant ({assistant_agent.name}): {assistant_response}")
                 break
             except Exception as e:
@@ -368,24 +418,18 @@ async def execute_tasks(state, step_name):
             logging.error(f"Error in assistant step", exc_info=True)
             assistant_response = "Solution: No solution as there was an error in assistant step"
 
-        # Send task response via WebSocket
         await send_response(state.global_channel, assistant_response)
-
-        # Prepare the context for the next step
         inputs["previous_response"] = assistant_response
 
+    logging.info(f"Finished chat turn {n}")
     if not state.started:
-        final = chat_manager.step({'role': 'user', 'content': """Provide your Final Answer. 
-                                   Remember that the person you are responding to CANNOT see any of your Thought/Action/Action Input/Observations,
-                                   so you need to include all relevant assistants response explicitly in your response, as a ready-made content but avoid repeating the same sentences!"""})
+        final = await chat_manager.step({'role': 'user', 'content': "Provide your Final Answer."})
         with open('./post.md', "w") as file:
             print(final, file=file)
         await send_response(state.global_channel, final)
 
     for key, agent in state.agents.items():
-        agent.end()
-    # Initiate a new state for new flow
-    state = get_or_create_user_state(state.global_channel)
+        await agent.end()
 
 async def wait_for_human_response(state, assistant_name):
     """
@@ -410,6 +454,9 @@ async def wait_for_human_response(state, assistant_name):
     # Get the response message from the queue
     response = await state.response_queue.get()
     logging.info(f"Received response from queue: {response}")
+
+    # Naplózás az ügynök nevével és a válasszal
+    logging.info(f"Passing response to assistant: {assistant_name}")
     return response
 
 async def send_task_to_human_agent(state, assistant_name, msg):
@@ -428,7 +475,10 @@ async def send_task_to_human_agent(state, assistant_name, msg):
             websocket = ws_clients.get(user_id)
             if websocket:
                 await websocket.send_text(f"Task assigned to {assistant_name}: {msg}")
+                logging.info(f"Task sent to {assistant_name}: {msg}")
                 return
+            else:
+                logging.error(f"No WebSocket connection found for {assistant_name} (user_id: {user_id})")
 
 # Send response through WebSocket
 async def send_response(channel: str, message: str):

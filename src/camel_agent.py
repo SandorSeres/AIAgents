@@ -22,6 +22,7 @@ import os
 import re
 from memory import Memory
 from jsonschema import validate, ValidationError
+import asyncio
 
 # Priority levels for message handling
 LOW_PRIORITY = 1
@@ -125,12 +126,15 @@ class CAMELAgent:
         Returns:
             list: The updated short-term memory.
         """
+        if asyncio.iscoroutine(message['content']):
+            raise TypeError("Coroutines should be awaited before passing to update_messages.")
+        
         if len(message['content']) > 64000:
-            message['content'] = message['content'][:64000]  # Truncate message content to 64k
+            message['content'] = message['content'][:64000]  # Truncate the message content if too large
         self.memory.add_to_short_term(message, priority=priority)
         logging.debug(f"({self.name}): Updated short-term memory: {len(self.memory.get_short_term_memory())}")
         return self.memory.get_short_term_memory()
-
+        
     def update_tool_history(self, message):
         """
         Updates the tool history in the agent's memory with a new message.
@@ -181,7 +185,7 @@ class CAMELAgent:
         from util import calculate_costs
         logging.info(f"({self.name}): Querying OpenAI...")
         try:
-            completion = await self.client.chat.completions.create(
+            completion = self.client.chat.completions.create(
                 messages=messages,
                 model='gpt-4o-mini',
                 temperature=0.2,
@@ -211,7 +215,7 @@ class CAMELAgent:
         from util import calculate_costs
         logging.info(f"({self.name}): Querying OpenAI with function call...")
         try:
-            completion = await self.client.chat.completions.create(
+            completion = self.client.chat.completions.create(
                 messages=messages,
                 model='gpt-4o-mini',  # Replace with the actual model
                 temperature=0.2,
@@ -315,7 +319,7 @@ class CAMELAgent:
         input_message = messages[-1]['content']
         return self.get_answer_runpod(input_message)
 
-    def query(self, messages, max_response_tokens=32000):
+    async def query(self, messages, max_response_tokens=32000):
         """
         Queries the configured LLM (either OpenAI or RunPod) with the provided messages.
 
@@ -398,7 +402,7 @@ class CAMELAgent:
             return fixed_json
         return None  # Return None if unable to fix
 
-    def get_tool(self, messages, tools, max_retries=5, delay=2):
+    async def get_tool(self, messages, tools, max_retries=5, delay=2):
         """
         Determines the appropriate tool to use based on the conversation context.
 
@@ -542,7 +546,7 @@ class CAMELAgent:
             return "{}"
 
     @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=10), retry=retry_if_exception_type(Exception))
-    def use_tool(self, messages, tools):
+    async def use_tool(self, messages, tools):
         """
         Executes a tool based on the decision made from the conversation context.
 
@@ -618,7 +622,7 @@ class CAMELAgent:
 
         return None, True
 
-    def react_prompt(self, input_message):
+    async def react_prompt(self, input_message):
         """
         Processes an input message, applies pre-processing tools, queries the LLM, and applies post-processing tools.
 
@@ -633,7 +637,7 @@ class CAMELAgent:
         output_message = None
 
         if self.pre_processing_tools:
-            tool_decision = self.get_tool(self.memory.get_short_term_messages(), self.pre_processing_tools)
+            tool_decision = await self.get_tool(self.memory.get_short_term_messages(), self.pre_processing_tools)
             if isinstance(tool_decision, str):
                 tool_decision = None
 
@@ -653,11 +657,15 @@ class CAMELAgent:
                             logging.error(f"({self.name}): Error applying pre-processing tool {tool_name}: {e}", exc_info=True)
                             return {"error": "Error applying pre-processing tool."}, True
 
-        output_message = self.query(self.memory.get_short_term_messages())
+        output_message = await self.query(self.memory.get_short_term_messages())
+
+        if asyncio.iscoroutine(output_message):
+            output_message = await output_message
+
         self.update_messages({'role': 'user', 'content': output_message}, HIGH_PRIORITY)
 
         if self.post_processing_tools:
-            tool_decision = self.get_tool(self.memory.get_short_term_messages(), self.post_processing_tools)
+            tool_decision = await self.get_tool(self.memory.get_short_term_messages(), self.post_processing_tools)
             if isinstance(tool_decision, str):
                 tool_decision = None
 
@@ -683,8 +691,8 @@ class CAMELAgent:
                     return {"error": "Tool decision processing failed."}, True
 
         return output_message
-
-    def step(self, input_message):
+                
+    async def step(self, input_message):
         """
         Executes a single step in the agent's task sequence by processing the input message and generating a response.
 
@@ -694,7 +702,7 @@ class CAMELAgent:
         Returns:
             str or dict: The response generated by the agent, or an error message.
         """
-        response = self.react_prompt(input_message)
+        response = await self.react_prompt(input_message)
         if isinstance(response, (str, dict)):
             return response
         else:
@@ -714,7 +722,7 @@ class CAMELAgent:
         cloned_agent.post_processing_tools = [tool.clone() for tool in self.post_processing_tools]
         return cloned_agent
 
-    def summarize_data_with_llm(self, messages):
+    async def summarize_data_with_llm(self, messages):
         """
         Summarizes a set of messages using the LLM.
 
@@ -736,7 +744,7 @@ class CAMELAgent:
             summary = self.query_runpod([{'role': 'system', 'content': f"{sys_msg}: {text_data}"}])
         return {'role': 'system', 'content': summary}
 
-    def end(self):
+    async def end(self):
         """
         Finalizes the agent's session by transferring relevant messages from short-term memory to long-term memory with summarization.
         """

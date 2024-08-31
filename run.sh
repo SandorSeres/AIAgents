@@ -1,3 +1,3 @@
 #!/bin/sh
-docker run -ti -p 8081:3000 agents /bin/bash
+docker run --rm -p 8081:3000 agents
 

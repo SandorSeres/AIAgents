@@ -39,13 +39,13 @@ def setup_logging():
 
 def load_yaml(file_path):
     """
-    Loads and parses a YAML configuration file.
+    Loads and parses a YAML configuration file, replacing environment variables.
 
     Parameters:
         file_path (str): The path to the YAML file.
 
     Returns:
-        dict: The parsed YAML file as a dictionary.
+        dict: The parsed YAML file as a dictionary with environment variables substituted.
 
     Logs:
         Info: On successful loading of the YAML file.
@@ -53,13 +53,18 @@ def load_yaml(file_path):
     """
     try:
         with open(file_path, 'r', encoding='utf-8') as file:
-            config = yaml.safe_load(file)
+            content = file.read()
+
+        # Replace environment variables in the content
+        content = os.path.expandvars(content)
+
+        config = yaml.safe_load(content)
         logging.info(f"YAML file loaded from {file_path}")
         return config
     except Exception as e:
         logging.error(f"Error loading YAML file from {file_path}: {e}")
         return None
-
+        
 def create_agent(role_name, agent_config):
     """
     Creates an agent based on the provided configuration. Supports HumanAgent and CAMELAgent types.

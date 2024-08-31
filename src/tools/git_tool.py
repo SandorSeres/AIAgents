@@ -11,6 +11,7 @@ import os
 import subprocess
 import json
 import shutil
+import logging
 
 class GitCloneTool:
     """
@@ -62,7 +63,7 @@ class GitCloneTool:
             auth_repo_url = repository_url.replace("https://", f"https://{token}@")
         else:
             return "Invalid repository URL format. Use https://", [], False
-        
+        print(auth_repo_url)
         # Clear the directory if it exists
         if os.path.exists(directory):
             shutil.rmtree(directory)
@@ -119,8 +120,9 @@ class GitCloneTool:
             - If the cloning is successful, it retrieves the list of downloaded files.
             - The files can be filtered by their extension if specified.
         """
+        logging.info(f"{repository_url} {token}")
         clone_message, clone_success = self.clone_repository(repository_url, directory, token)
-        print(clone_message)
+        logging.info(str(clone_message))
         if clone_success:
             files_list = self._get_downloaded_files(directory, file_extension)
             return f"Solution: {files_list}", True
