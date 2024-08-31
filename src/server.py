@@ -170,38 +170,40 @@ def get_or_create_user_state(user_id):
         initialize_agents(session_states[user_id])
     return session_states[user_id]
 
-# WebSocket interface
 @app.websocket("/ws/{user_id}")
 async def websocket_endpoint(websocket: WebSocket, user_id: str):
-    """
-    Function Name: websocket_endpoint
-    Description: Handles WebSocket connections for real-time communication between the server and clients.
-                 It manages the connection lifecycle, including accepting messages, sending responses, and handling disconnections.
-    
-    Parameters:
-        websocket (WebSocket): The WebSocket connection object.
-        user_id (str): The unique identifier for the user associated with this WebSocket connection.
-    """
     await websocket.accept()
-    ws_clients[user_id] = websocket  # Store the WebSocket object with its identifier
-    logging.info(f"WebSocket connection established for user: {user_id}")  # Debug message
+    ws_clients[user_id] = websocket
+    logging.info(f"WebSocket connection established for user: {user_id}")
 
     try:
         while True:
-            data = await websocket.receive_text()
-            logging.info(f"Message received from {user_id}: {data}")  # Debug message
+            data_task = asyncio.create_task(websocket.receive_text())
+            keepalive_task = asyncio.create_task(asyncio.sleep(30))  # Keep-alive időzítő
+            done, pending = await asyncio.wait(
+                [data_task, keepalive_task],
+                return_when=asyncio.FIRST_COMPLETED
+            )
 
-            # Send a test message back to the client at this point
-            await websocket.send_text(f"Message text was: {data}")
+            if data_task in done:
+                data = data_task.result()
+                logging.info(f"Message received from {user_id}: {data}")
+                await websocket.send_text(f"Message text was: {data}")
+            else:
+                logging.info(f"Sending keep-alive ping to user: {user_id}")
+                await websocket.send_text("ping")
+            
+            for task in pending:
+                task.cancel()
+
     except WebSocketDisconnect:
-        logging.info(f"WebSocket connection closed for user: {user_id}")  # Debug message
-        if user_id in ws_clients:
-            del ws_clients[user_id]  # Remove the WebSocket object with its identifier
+        logging.info(f"WebSocket connection closed for user: {user_id}")
     except Exception as e:
         logging.error(f"WebSocket connection error for user {user_id}: {e}", exc_info=True)
+    finally:
         if user_id in ws_clients:
-            del ws_clients[user_id]  # Remove the WebSocket object with its identifier
-
+            del ws_clients[user_id]
+            
 # Enhanced monitoring and snapshot function
 async def get_queue_items(queue):
     """

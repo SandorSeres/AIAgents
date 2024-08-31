@@ -1,0 +1,5 @@
+This file defines the CAMELAgent class, which serves as an AI agent capable of interacting with various tools and LLMs (Large Language Models) like OpenAI and RunPod. The agent manages memory, executes tasks with pre-processing and post-processing tools, and handles complex interactions with external APIs. It is designed for use in multi-agent systems where it can autonomously manage tasks and respond to user input.
+Author:[Sandor Seres (sseres@code.hu)]
+Date: 2024-08-31
+Version: 1.0
+License:[Creative Commons Zero v1.0 Universal]

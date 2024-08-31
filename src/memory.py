@@ -1,12 +1,3 @@
-"""
-File Name: memory.py
-Description: This file defines the Memory class, which manages both short-term and long-term memory for an AI agent. The class supports adding, retrieving, and filtering memories, as well as saving and loading long-term memory from a persistent storage file. It also tracks the history of tools used by the agent.
-Author: [Sandor Seres (sseres@code.hu)]
-Date: 2024-08-31
-Version: 1.0
-License: [Creative Commons Zero v1.0 Universal]
-"""
-
 import json
 import os
 import logging
@@ -35,7 +26,7 @@ class Memory:
         self.short_term_memory = []
         self.long_term_memory = []
         self.tool_history = []
-        self.agent_name = agent_name
+        self.name = agent_name
         self.memory_file = f"./memory/{agent_name}_memory.json"
         self.load_long_term_memory()
 
@@ -114,6 +105,29 @@ class Memory:
         """
         self.short_term_memory = []
 
+    def load_long_term_memory(self):
+        """
+        Loads the long-term memory and tool history from a file.
+
+        Notes:
+            - If the file does not exist, initializes with an empty list.
+            - If the file cannot be decoded, initializes with an empty list.
+        """
+        try:
+            with open(f"{self.name}_long_term_memory.json", "r") as file:
+                data = json.load(file)
+                self.long_term_memory = data.get('long_term_memory', [])
+                self.tool_history = data.get('tool_history', [])
+            logging.info(f"Memory loaded successfully from {self.name}_long_term_memory.json")
+        except FileNotFoundError:
+            logging.warning(f"No previous memory file found for {self.name}, starting fresh.")
+            self.long_term_memory = []
+            self.tool_history = []
+        except json.JSONDecodeError as e:
+            logging.error(f"Error decoding JSON from memory file: {e}")
+            self.long_term_memory = []
+            self.tool_history = []
+
     def save_long_term_memory(self):
         """
         Saves the long-term memory and tool history to a file. The file is stored at a path based on the agent's name.
@@ -125,29 +139,24 @@ class Memory:
             "long_term_memory": self.long_term_memory,
             "tool_history": self.tool_history
         }
+        try:
+            # Ellenőrizze a data tartalmát és szűrje ki a nem sorozható objektumokat
+            def is_serializable(value):
+                try:
+                    json.dumps(value)
+                    return True
+                except (TypeError, ValueError):
+                    return False
+
+            # Szűrés a mentendő adatokon
+            serializable_data = {k: v for k, v in data.items() if is_serializable(v)}
+
+            with open(f"{self.name}_long_term_memory.json", "w") as file:
+                json.dump(serializable_data, file, indent=4)
+            logging.info(f"Memory saved successfully to {self.name}_long_term_memory.json")
         
-        # Check if any items in the data dictionary are coroutines and await them
-        for key, value in data.items():
-            if asyncio.iscoroutine(value):
-                raise TypeError(f"Cannot serialize coroutine in '{key}'. Ensure all async operations are awaited.")
-        
-        os.makedirs(os.path.dirname(self.memory_file), exist_ok=True)
-        with open(self.memory_file, 'w') as file:
-            json.dump(data, file, indent=4)
-        self.reset_short_term()
-        
-    def load_long_term_memory(self):
-        """
-        Loads the long-term memory and tool history from a file. If the file does not exist, initializes with empty lists.
-        """
-        if os.path.exists(self.memory_file):
-            with open(self.memory_file, 'r') as file:
-                data = json.load(file)
-                self.long_term_memory = data.get("long_term_memory", [])
-                self.tool_history = data.get("tool_history", [])
-        else:
-            self.long_term_memory = []
-            self.tool_history = []
+        except Exception as e:
+            logging.error(f"Error saving long-term memory: {e}", exc_info=True)
 
     def filter_combined(self, messages, keywords=None, min_priority=1):
         """
@@ -180,4 +189,3 @@ class Memory:
             if item['priority'] >= min_priority:
                 filtered.append(item['message'])
         return filtered
-

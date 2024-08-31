@@ -1,0 +1,1 @@
+This file defines the GitCloneTool class, which provides functionalities to clone a GitHub repository into a specified directory using authentication and return the list of downloaded files. The class supports filtering the downloaded files by their extension.

@@ -1,8 +1,7 @@
 version: '1.0'
-
 variables:
   project_name: 'AI-Powered Documentation Tool'
-  architecture_type: 'AI-assisted Documentation System'
+
   inputs:
     language: English
     today: "24.08.2024"
@@ -104,7 +103,6 @@ agents:
     system_prompt: |
       Your task is to download all the .py files from GitHub and provide their paths for further documentation.
 
-      Begin with:
       Solution: <LIST_OF_PY_FILES>
     tools:
       pre-processing:
@@ -113,17 +111,18 @@ agents:
   CodeDocumenter:
     type: "CAMELAgent"
     role_name: "Code Documenter"
-    role_description: "Generates Markdown documentation for the provided .py file."
+    role_description: "Generates Markdown documentation for the provided .py file and save the documentation in the given directory."
     llm: "openai"
     system_prompt: |
-      Your task is to generate detailed Markdown documentation for the provided .py file. Use the instruction in {DOCUMENTATION_CRITERIA}.
-      Save the file in {DOCUMENTATION_DIRECTORY} using the base name of the provided .py file but with a .md extension.
-      Example:
-      If the provided source file is `main.py`, then save the documentation in `{DOCUMENTATION_DIRECTORY}/main.md`.
-
-      Begin with:
-      Solution: <MARKDOWN_DOCUMENTATION>
+      Your task is to generate detailed Markdown documentation for the provided source file. 
+      Use your tool to read the file.
+      Use the instruction in {DOCUMENTATION_CRITERIA}.
+      Save the file in the direktory given in the request using the base name of the provided .py file but with a .md extension.
+ 
+       Solution: <MARKDOWN_DOCUMENTATION>
     tools:
+      pre-processing:
+        - ReadFileTool
       post-processing:
         - 'SaveToFileTool'
 
@@ -138,7 +137,6 @@ agents:
       Use the instruction in {DOCUMENTATION_CRITERIA}.
       Save the README.md file in {DOCUMENTATION_DIRECTORY}
 
-      Begin with:
       Solution: <README_CONTENT>
     tools:
       post-processing:
