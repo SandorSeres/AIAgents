@@ -1,0 +1,17 @@
+beautifulsoup4
+fastapi
+uvicorn[standard]
+jsonschema
+langchain
+langchain_experimental
+markdown
+numpy
+openai
+pydantic
+python-dotenv
+pyyaml
+requests
+tenacity
+tools
+transformers
+html2text

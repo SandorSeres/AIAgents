@@ -1,0 +1,148 @@
+version: '1.0'
+
+variables:
+  project_name: 'AI-Powered Documentation Tool'
+  architecture_type: 'AI-assisted Documentation System'
+  inputs:
+    language: English
+    today: "24.08.2024"
+    GITHUB_REPOSITORY_URL : ${GITHUB_REPOSITORY_URL}
+    GITHUB_CLONE_DIRECTORY : ./clone
+    GITHUB_TOKEN : ${GITHUB_TOKEN}
+    DOCUMENTATION_DIRECTORY : ./clone/ai_doc
+    DOCUMENTATION_CRITERIA: |
+      The system will generate Markdown documentation according to the following criteria:
+      
+      For each source code file, individually:
+      
+      1. Function and Class Descriptions:
+        Purpose: Summarize what each function and class does.
+        Parameters and Return Values: List the input parameters, their types, and return values for each function.
+        Exception Handling: Describe any potential exceptions or errors the function or class might raise and how they are managed.
+        Key Code Explanations: Explain important sections of the code.
+      
+      2. Detailed Algorithm Explanations:
+        For complex logic or algorithms, provide a step-by-step breakdown.
+        Critical Decisions: Highlight sections that are pivotal to the program's operation, such as how data is processed or important decisions are made.
+        Examples of Code Usage: If relevant, include examples demonstrating code usage.
+      
+      3. Basic Examples:
+        Include simple examples to show how functions, classes, or modules are used.
+        Typical Use Cases: Present examples of the most common use cases for the program's functionality.
+        Expected Outputs: Specify expected outputs for different inputs.
+      
+      For the README.md file, include points 1, 2, and 3, along with the following additional sections:
+      
+      4. Project Overview:
+        Description: Provide a brief summary of the project's purpose and objectives.
+        Installation and Dependencies: List the steps required to install the project and any necessary dependencies (e.g., libraries or tools).
+        Usage Instructions: Offer a short guide on how to run the program.
+        Development Roadmap: If applicable, mention any future development plans or potential extensions.
+      
+      5. Testing Instructions:
+        Describe how to run unit tests (if available), including the testing framework used and how to execute the tests.
+        Contribution Guidelines: Outline instructions for contributing to the project.
+      
+      6. Code Contribution:
+        If the project is open source, provide guidelines on how others can contribute to the codebase.
+        Guidelines: Define coding standards, how to handle pull requests (PRs), and how to report bugs or issues.
+      
+      7. License Information:
+        Provide details about the project's license and the terms of use.
+      
+      Based on these criteria, the system will generate detailed Markdown documentation for each Python file and combine it into a comprehensive README.md file.
+    roles:
+      - {"FileDownloader": "Downloads files from GitHub and returns a list of .py files."}
+      - {"CodeDocumenter": "Generates Markdown documentation for each Python file."}
+      - {"ReadmeGenerator": "Generates the final README.md file based on project structure and documentation."}
+
+  steps:
+    Automated Code Documentation Process:
+      participants: ["FileDownloader", "CodeDocumenter", "ReadmeGenerator"]
+      objective: "Automatically document the student code, generate Markdown for each file, and consolidate everything into a final README.md."
+      output: "Generated Markdown documentation for each file and a comprehensive README.md file for the project."
+
+agents:
+  ChatManager:
+    type: "CAMELAgent"
+    role_name: "Documentation Tool Project Coordinator"
+    role_description: "Coordinates the process of generating Markdown documentation for the code and writing the README.md file."
+    llm: "openai"
+    system_prompt: |
+      You are responsible for overseeing the entire process of documenting the code and generating the README.md file. Your tasks include:
+      - Download all the .py files from the GitHub repository.
+      - Process each .py file one by one, generating Markdown documentation for each file using the {DOCUMENTATION_DIRECTORY} and the source file name with .md extension.
+      - Once all files are documented, generate a comprehensive README.md file that provides an overview of the project.
+      - Ensure that all agents perform their roles correctly and on time.
+      - After each agent completes their task, verify their work and move on to the next file until all files are processed.
+      - After documenting all files, consolidate the documentation and generate a structured README.md file.
+
+      Begin by instructing the FileDownloader to download the code files from GitHub. Then, for each file:
+      1. FileDownloader → 
+      2. CodeDocumenter (generates Markdown documentation) → 
+      3. ReadmeGenerator (generates the README.md based on the documentation).
+
+      Continue processing until all files are documented. After all documentation is complete, create the README.md.
+
+      Use the following format to track tasks:
+      
+      {
+        "Question": "<DESCRIPTION_OF_NEXT_TASK>",
+        "Thought": "<YOUR_THOUGHT_PROCESS>",
+        "Action": "<SPECIFIC_ASSISTANT_TO_INSTRUCT>",
+        "Action Input": "<DETAILED_INSTRUCTION_FOR_ASSISTANT>",
+        "Observation": "<RESULT_OF_ASSISTANT'S_WORK>"
+      }
+
+      Continue processing until all files are done. Once the task is fully completed for all files, respond with <CAMEL_TASK_DONE>.
+      
+  FileDownloader:
+    type: "CAMELAgent"
+    role_name: "File Downloader"
+    role_description: "Downloads code files from GitHub and provides a list of .py files for documentation."
+    llm: "openai"
+    system_prompt: |
+      Your task is to download all the .py files from GitHub and provide their paths for further documentation.
+
+      Begin with:
+      Solution: <LIST_OF_PY_FILES>
+    tools:
+      pre-processing:
+        - GitCloneTool
+
+  CodeDocumenter:
+    type: "CAMELAgent"
+    role_name: "Code Documenter"
+    role_description: "Generates Markdown documentation for the provided .py file."
+    llm: "openai"
+    system_prompt: |
+      Your task is to generate detailed Markdown documentation for the provided .py file. Use the instruction in {DOCUMENTATION_CRITERIA}.
+      Save the file in {DOCUMENTATION_DIRECTORY} using the base name of the provided .py file but with a .md extension.
+      Example:
+      If the provided source file is `main.py`, then save the documentation in `{DOCUMENTATION_DIRECTORY}/main.md`.
+
+      Begin with:
+      Solution: <MARKDOWN_DOCUMENTATION>
+    tools:
+      post-processing:
+        - 'SaveToFileTool'
+
+  ReadmeGenerator:
+    type: "CAMELAgent"
+    role_name: "Readme Generator"
+    role_description: "Generates a README.md file based on the overall project structure and code documentation."
+    llm: "openai"
+    system_prompt: |
+      Your task is to generate a README.md file. Use the Markdown documentation generated from the code files as reference.
+      Include all source file documentation and add the nescessary additions.
+      Use the instruction in {DOCUMENTATION_CRITERIA}.
+      Save the README.md file in {DOCUMENTATION_DIRECTORY}
+
+      Begin with:
+      Solution: <README_CONTENT>
+    tools:
+      post-processing:
+        - 'SaveToFileTool'
+
+interaction:
+  steps: 25

@@ -1,0 +1,86 @@
+version: '1.0'
+
+variables:
+  word_count: '2000'
+  inputs:
+    language: Hungarian
+    topic: |
+      Create a question and ansvere loop where the HumanAssistant ask a question and the ResearchAssistant find the answere on the internet
+    roles: [
+      {"HumanAssistant": "Human assistant who ask a question"},
+      {"ResearchAssistant": "Assistant with expertise in conducting research and gathering information by searching in the internet"},
+    ]
+    assistant_critic_map:
+      none
+  steps:
+    chat:
+      participants: ["HumanAssistant", "ResearchAssistant"]
+      objective: "ResourceAssistant answere the question from the HumanAssistant"
+      output: "the Q/A process."
+
+agents:
+  ChatManager:
+    type: "CAMELAgent"
+    role_name: "Chat Coordinator"
+    role_description: "Chat manager responsible for coordinating question answer process with the works of assistants"
+    llm : "openai"
+    system_prompt: |
+      You are responsible for managing the question answare process. Your tasks include:
+      - Let the HumanAssistant to ask a question.
+      - Process each question one by one in sequence.
+      - For each question, coordinate the network resource, feedback generation processes before moving on to let the HumanAgent to create a question.
+      - Ensure that all agents perform their roles correctly and on time.
+
+      Begin by instructing the HumanAssistant to ask a question. Then Let the ResearchAssistant to answer in a cycle:
+      1. HumanAssistant → 
+      2. ResearchAssistant → 
+
+      Ensure that after processing each question, you continue with let the HumanAgent to ask.
+
+      Use the following format to track tasks:
+      
+      {
+        "Question": "<DESCRIPTION_OF_NEXT_TASK>",
+        "Thought": "<YOUR_THOUGHT_PROCESS>",
+        "Action": "<SPECIFIC_ASSISTANT_TO_INSTRUCT>",
+        "Action Input": "<DETAILED_INSTRUCTION_FOR_ASSISTANT>",
+        "Observation": "<RESULT_OF_ASSISTANT'S_WORK>"
+      }
+
+      Continue processing until The HumanAgent nor saying <DONE>. Then respond with <CAMEL_TASK_DONE>.
+      When responding with your Final Answer, Be polite and say obly goodby till next time.
+
+  ResearchAssistant:
+    type: "CAMELAgent"
+    role_name: "Research Assistant"
+    role_description: "Assistant with expertise in conducting research and gathering information all the time from the internet"
+    llm : "openai"
+    system_prompt: |
+      Your task is to assist with gathering accurate and up-to-date information for the topic provided by the ChatManager.
+      You must perform thorough research on the internet and provide detailed responses to the instructions given.
+      Always prioritize reliable and credible sources.
+      Make sure the information is relevant and well-organized.
+      You should respond with the gathered information in a clear and concise manner.
+      Do not make assumptions; always rely on factual data.
+      Remember: all the time also provide the sources of your information as a URL.
+      The content should be at least 1000 tokens or the max defined by the platform.
+      Do not add anything else other than your solution to my instruction.
+      You are never supposed to ask me any questions; you only answer questions.
+      You are never supposed to reply with a vague solution. Explain your solutions.
+      Your solution must be declarative sentences and in simple present tense.
+      Unless I say the task is completed, you should always start with:
+
+      Solution: <YOUR_SOLUTION>
+
+      <YOUR_SOLUTION> should be specific and provide preferable implementations and examples for task-solving.
+    tools: 
+      pre-processing:
+        - 'SearchAndRetrieveTool'
+
+  HumanAssistant:
+    type: "HumanAgent"
+    role_name: "Human Assistant"
+    role_description: "Assistant who ask a question"
+ 
+interaction:
+  steps: 30

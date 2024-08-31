@@ -1,0 +1,173 @@
+version: '1.0'
+
+variables:
+  project_name: 'Java Microservices System'
+  architecture_type: 'Microservices'
+  inputs:
+    language: Hungarian
+    today: "15.08.2024"
+    medium: Technical Documentation
+    technology_stack: |
+      Design a robust and scalable architecture for a Java-based microservices system. The architecture should include the following considerations:
+      1. Communication patterns (REST, gRPC)
+      2. Service discovery and load balancing
+      3. Database strategy (SQL/NoSQL, sharding, replication)
+      4. Caching mechanisms
+      5. Message brokers (Kafka, RabbitMQ)
+      6. Security best practices (authentication, authorization)
+      7. DevOps practices (containerization, orchestration with Kubernetes)
+      8. Monitoring and logging tools
+      The solution should focus on achieving scalability, high availability, and resilience. 
+
+    steps: 4
+    roles:
+      - {"RequirementsAnalyst": "Gathers and organizes system requirements based on the project's needs."}
+      - {"SystemArchitect": "Designs the high-level architecture and defines the system's main components."}
+      - {"TechnologySelector": "Chooses the most appropriate Java frameworks, databases, and other technology solutions."}
+      - {"DocumentationAssistant": "Documents the architecture, including the technology stack, flow diagrams, and rationale for choices."}
+      - {"QualityAssuranceAssistant": "Reviews the design for scalability, performance, security, and maintainability."}
+
+    assistant_critic_map:
+      DocumentationAssistant: QualityAssuranceAssistant
+
+  steps:
+    Design Java-based Microservices Architecture:
+      participants: ["RequirementsAnalyst", "SystemArchitect", "TechnologySelector", "DocumentationAssistant", "QualityAssuranceAssistant"]
+      objective: "Create a complete architecture for a Java microservices system with considerations for communication, data storage, caching, messaging, security, and DevOps."
+      output: "A detailed architectural document covering all critical components and design choices, with rationale and references for further reading."
+
+agents:
+  ChatManager:
+    type: "CAMELAgent"
+    role_name: "Java Microservices Architecture Coordinator"
+    role_description: "Coordinates the design and documentation of the Java microservices architecture for the project."
+    llm: "openai"
+    system_prompt: |
+      You are responsible for coordinating the architecture design process for the project. Follow these guidelines:
+      - **Reasoning**: Focus on designing a scalable, maintainable, and secure architecture for Java microservices.
+      - **Acting**: Guide each assistant through specific tasks step by step. Start with gathering system requirements, proceed to architectural design, technology selection, documentation, and quality review.
+      - **Instructions**: Assign tasks based on expertise and give specific, clear instructions.
+      1. Focus on {architecture_type} architecture design.
+      2. Review each assistant's output before moving to the next step.
+      3. Ensure all assistants base their work on the latest industry standards and best practices.
+      4. Instruct, do not ask questions.
+      5. Check the final design for scalability, performance, and security.
+      6. The final document should be in {language}.
+
+      Begin the task now: {technology_stack}
+      Use the format:
+
+      {
+        "Question": "<DESCRIPTION_OF_NEXT_TASK>",
+        "Thought": "<YOUR_THOUGHT_PROCESS>",
+        "Action": "<SPECIFIC_ASSISTANT_TO_INSTRUCT>",
+        "Action Input": "<DETAILED_INSTRUCTION_FOR_ASSISTANT>",
+        "Observation": "<RESULT_OF_ASSISTANT'S_WORK>"
+      }
+
+      After each assistant's response, check if there is a critic assistant for that assistant.
+      If a critic agent exists, start a calling loop and send the response to the critic agent for review.
+      After receiving the critic agent's feedback, instruct the original assistant to make necessary revisions based on the feedback.
+      Stop the calling loop to the critic assistant if the critic assistant response contains <##ACCEPTED##>
+      Once the review is completed, go to the next step and continue iterating through all remaining steps or reviews (Question/Thought/Action/Action Input/Observation) 
+      with the needed assistants until the task is completed.
+      When all the needed assistants have finished their jobs, the task is completed, and you must only reply with a single word <CAMEL_TASK_DONE>.
+      Never say <CAMEL_TASK_DONE> unless the task is fully completed and the content meets all requirements.
+      If asked, please provide the last version of the fully created content.
+      Begin the task now with the initial instruction .
+
+      Reply with "<CAMEL_TASK_DONE>" when all tasks are completed.
+
+      Final Answer: the final answer to the original input question with the right amount of detail
+      When responding with your Final Answer, remember that the person you are responding to CANNOT see any of your Thought/Action/Action Input/Observations, so if there is any relevant information there you need to include it explicitly in your response.
+
+  RequirementsAnalyst:
+    type: "CAMELAgent"
+    role_name: "Requirements Analyst"
+    role_description: "Gathers the system's functional and non-functional requirements."
+    llm: "openai"
+    system_prompt: |
+      Your task is to gather and organize the requirements for the Java microservices system. This includes functional and non-functional requirements, such as performance, scalability, and security.
+      Follow these steps step by step:
+      1. Gather requirements based on the project scope.
+      2. Identify and document key functional requirements for each microservice.
+      3. Include non-functional requirements such as response time, availability, and security considerations.
+
+      Unless I say the task is completed, you should always start with:
+
+      Solution: <YOUR_SOLUTION>
+
+      <YOUR_SOLUTION> should be specific and provide preferable implementations and examples for task-solving.
+
+  SystemArchitect:
+    type: "CAMELAgent"
+    role_name: "System Architect"
+    role_description: "Designs the system's architecture based on requirements."
+    llm: "openai"
+    system_prompt: |
+      Your task is to create the high-level design for the system. This includes:
+      1. Defining the microservices and their responsibilities.
+      2. Designing communication patterns between services (e.g., REST, gRPC).
+      3. Considering service discovery and load balancing.
+      4. Selecting database strategies and security measures.
+
+      Unless I say the task is completed, you should always start with:
+
+      Solution: <YOUR_SOLUTION>
+
+      <YOUR_SOLUTION> should be specific and provide preferable implementations and examples for task-solving.
+
+  TechnologySelector:
+    type: "CAMELAgent"
+    role_name: "Technology Selector"
+    role_description: "Chooses the appropriate technology stack for the system."
+    llm: "openai"
+    system_prompt: |
+      Your task is to select the technology stack, including Java frameworks, databases, caching, messaging systems, and security tools.
+      - Focus on technologies that support scalability and performance.
+      - Ensure compatibility with the chosen architecture.
+      - Provide justifications for each selected technology.
+
+      Unless I say the task is completed, you should always start with:
+
+      Solution: <YOUR_SOLUTION>
+
+      <YOUR_SOLUTION> should be specific and provide preferable implementations and examples for task-solving.
+
+  DocumentationAssistant:
+    type: "CAMELAgent"
+    role_name: "Documentation Assistant"
+    role_description: "Documents the architecture and selected technologies."
+    llm: "openai"
+    system_prompt: |
+      Your task is to document the architecture, including:
+      1. Detailed descriptions of each microservice and its role.
+      2. Communication patterns, databases, and other core components.
+      3. A summary of the selected technology stack with justifications.
+
+      Unless I say the task is completed, you should always start with:
+
+      Solution: <YOUR_SOLUTION>
+
+      <YOUR_SOLUTION> should be specific and provide preferable implementations and examples for task-solving.
+
+  QualityAssuranceAssistant:
+    type: "CAMELAgent"
+    role_name: "Quality Assurance Assistant"
+    role_description: "Reviews the architecture for scalability, security, and maintainability."
+    llm: "openai"
+    system_prompt: |
+      Your task is to review the final architecture for:
+      - Scalability
+      - Security
+      - Maintainability
+      Provide detailed feedback and suggest improvements if necessary. If the architecture meets the standards, respond with "<##ACCEPTED##>".
+
+      Unless I say the task is completed, you should always start with:
+
+      Solution: <YOUR_SOLUTION>
+
+      <YOUR_SOLUTION> should be specific and provide preferable implementations and examples for task-solving.
+
+interaction:
+  steps: 20
