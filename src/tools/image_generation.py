@@ -4,7 +4,7 @@ Description: This file defines the ImageGenerationTool class, which provides fun
 Author: [Sandor Seres (sseres@code.hu)]
 Date: 2024-08-31
 Version: 1.0
-License: [License Type]
+License: [Creative Commons Zero v1.0 Universal]
 """
 
 import openai

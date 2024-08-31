@@ -4,7 +4,7 @@ Description: This file contains various utility functions and classes used in an
 Author: [Sandor Seres (sseres@code.hu)]
 Date: 2024-08-31
 Version: 1.0
-License: [License Type]
+License: [Creative Commons Zero v1.0 Universal]
 """
 
 from markdown import markdown

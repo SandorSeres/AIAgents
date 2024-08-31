@@ -4,7 +4,7 @@ Description: This file defines the CAMELAgent class, which serves as an AI agent
 Author: [Sandor Seres (sseres@code.hu)]
 Date: 2024-08-31
 Version: 1.0
-License: [License Type]
+License: [Creative Commons Zero v1.0 Universal]
 """
 
 import logging
