@@ -1,0 +1,15 @@
+{
+    "version": "0.1.0",
+    "configurations": [
+        {
+            "name": "Python: src/server.py",
+            "type": "python",
+            "request": "launch",
+            "program": "/workspaces/AIAgents/src/server.py",
+            "env": {
+                "PYTHONPATH": "/workspaces/AIAgents/src/src"
+            },
+            "console": "integratedTerminal"
+        }
+    ]
+}

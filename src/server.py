@@ -339,41 +339,31 @@ async def execute_tasks(state, step_name):
         logging.info(f"Starting chat turn {n}")
         retry = 0
         context = {"input": inputs, "previous_response": assistant_response}
-        logging.info('1')
         await create_system_snapshot(state)
-        logging.info('2')
 
         while retry < 4:
             try:
                 manager_msg = {'role': 'user', 'content': json.dumps(context)}
-                logging.info('3')
                 manager_output = await chat_manager.step(manager_msg)
-                logging.info('4')
                 await send_response(state.global_channel, manager_output)
-                logging.info('5')
 
                 if "CAMEL_TASK_DONE" in manager_output:
                     logging.info("Task done!")
                     state.started = False
                     break
 
-                logging.info('6')
                 parsed_instruction = parse_user_instruction(manager_output)
-                logging.info('7')
                 assistant_name = parsed_instruction["Action"]
                 if assistant_name not in state.agents:
-                    logging.info('8')
                     logging.info(f"No agent found with the name '{assistant_name}'")
                     assistant_response = f"Assistant name unknown. Context: {assistant_response}"
                     retry += 1
                     continue
-                logging.info('9')
                 break
             except Exception as e:
                 logging.error(f"Error in task execution loop: {e}", exc_info=True)
                 retry += 1
                 await asyncio.sleep(1)
-        logging.info('10')
 
         if not state.started:
             break
@@ -655,7 +645,7 @@ if __name__ == "__main__":
     setup_logging()
     try:
         import uvicorn
-        uvicorn.run(app, host="0.0.0.0", port=3000)
+        uvicorn.run(app, host="0.0.0.0", port=8081)
     except Exception as e:
         logging.error(f"Error in main execution: {e}", exc_info=True)
 

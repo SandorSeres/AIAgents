@@ -1,0 +1,26 @@
+{
+	"name": "agents",
+	"build": {
+		"context": "..",
+		"dockerfile": "../Dockerfile"
+	},
+	"remoteEnv": {
+		"PYTHONPATH": "/workspaces/AIAgents/src"
+	},
+	"workspaceFolder": "/workspaces/AIAgents",
+	"runArgs": [
+		"--network",
+		"host",
+		"--env",
+		"PYTHONPATH=/workspaces/AIAgents/src"
+	],
+    // An array port numbers to forward
+    "forwardPorts": [3000],
+	"customizations": {
+		"vscode": {
+			"extensions": [
+				"ms-vscode-remote.remote-containers"
+			]
+		}
+	}
+}
