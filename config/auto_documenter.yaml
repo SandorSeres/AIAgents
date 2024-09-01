@@ -118,8 +118,9 @@ agents:
       Use your tool to read the file.
       Use the instruction in {DOCUMENTATION_CRITERIA}.
       Save the file in the direktory given in the request using the base name of the provided .py file but with a .md extension.
- 
-       Solution: <MARKDOWN_DOCUMENTATION>
+      Very important to use the documents saving direktory exactly as it is requested in the input!
+
+      Solution: <MARKDOWN_DOCUMENTATION>
     tools:
       pre-processing:
         - ReadFileTool
@@ -135,7 +136,8 @@ agents:
       Your task is to generate a README.md file. Use the Markdown documentation generated from the code files as reference.
       Include all source file documentation and add the nescessary additions.
       Use the instruction in {DOCUMENTATION_CRITERIA}.
-      Save the README.md file in {DOCUMENTATION_DIRECTORY}
+      Save the README.md file in the directory provided in the request!
+      Very important to use the documents saving direktory exactly as it is requested in the input!
 
       Solution: <README_CONTENT>
     tools:
