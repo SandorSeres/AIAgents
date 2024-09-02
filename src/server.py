@@ -96,7 +96,7 @@ class State:
         expected_human_agent (str): The name of the human agent expected to respond.
         human_agent_response_received (asyncio.Event): Event to signal when a response is received from a human agent.
         response_queue (asyncio.Queue): Queue to manage responses from human agents.
-        cli_request (bool): Flag indicating if the request originated from the CLI.
+        config_request (bool): Flag indicating if the request originated from the CLI.
         snapshot_history (list): A list to store snapshots of the session state.
         step_request (bool): Indicates if a step selection is awaited from the user.
     """
@@ -113,9 +113,10 @@ class State:
         self.expected_human_agent = None
         self.human_agent_response_received = asyncio.Event()
         self.response_queue = asyncio.Queue()
-        self.cli_request = False  # Flag to indicate if the request is from CLI
+        self.config_request = False  # Flag to indicate if the request is from CLI
         self.snapshot_history = []  # List to store snapshot history
         self.step_request = False  # Added step_request attribute
+        self.steps= []
 
 # Agent initialization function
 def initialize_agents(state):
@@ -164,10 +165,6 @@ def get_or_create_user_state(user_id):
     """
     if user_id not in session_states:
         session_states[user_id] = State()
-        chosen_config_path = os.getenv("CONFIG")
-        if not chosen_config_path:
-            raise ValueError("No CONFIG environment variable set. Cannot initialize agents.")
-        initialize_agents(session_states[user_id])
     return session_states[user_id]
 
 @app.websocket("/ws/{user_id}")
@@ -556,35 +553,41 @@ async def cli_events(request: CLIRequest):
         config_options = list(available_configs.keys())
         options_text = "\n".join([f"{i+1}. {option}" for i, option in enumerate(config_options)])
         await send_response(user_id, f"Please choose a configuration by typing the corresponding number:\n{options_text}")
-        session_states[user_id] = State()
-        session_states[user_id].cli_request = True
+        get_or_create_user_state(user_id)
+        session_states[user_id].config_request = True
         session_states[user_id].global_channel = user_id  # Set the global_channel
         return JSONResponse({"message": "Configuration choice requested."}, status_code=200)
     """
-    Client-side state management: This branch is executed when state.cli_request is true, indicating that the user is in the process of choosing a configuration.
+    Client-side state management: This branch is executed when state.config_request is true, indicating that the user is in the process of choosing a configuration.
     Configuration selection: The user must provide a number corresponding to an item in the list of configurations.
     Step selection: If only one step is available in the configuration, it is automatically selected. If there are multiple steps, the user is prompted to choose one.
     Background process initiation: Once a step is chosen, a background process (execute_tasks) is initiated to execute the step.
     """
-    if state and state.cli_request:
+    if state and state.config_request:
         try:
             choice_index = int(message) - 1
             if 0 <= choice_index < len(available_configs):
                 chosen_config_key = list(available_configs.keys())[choice_index]
                 chosen_config_path = available_configs[chosen_config_key]
                 os.environ["CONFIG"] = chosen_config_path
-                state.cli_request = False
+                state.config_request = False
                 state.config_set = True
                 initialize_agents(state)
                 
                 # Step selection
-                steps = state.variables.get("steps", [])
-                if len(steps) == 1:
-                    step = list(steps.keys())[0]  # If only one item, select automatically
+                state.steps = state.variables.get("steps", [])
+                if len(state.steps) == 1:
+                    step = list(state.steps.keys())[0]  # If only one item, select automatically
                 else:
-                    await send_response(user_id, f"Please choose a step to start:\n{', '.join(steps.keys())}")
-                    state.step_request = True  # Indicate that a step is awaited from the user
-                    return JSONResponse({"message": "Step choice requested."}, status_code=200)
+                    step_options = list(state.steps.keys())
+                    options_text = "\n".join([f"{i+1}. {option}" for i, option in enumerate(step_options)])
+                    await send_response(user_id, f"Please choose a step to start by typing the corresponding number:\n{options_text}")
+                    session_states[user_id].steps = step_options
+                    session_states[user_id].step_request = True
+                    session_states[user_id].global_channel = user_id  # Set the global_channel
+                    return JSONResponse({"message": "Configuration choice requested."}, status_code=200)
+
+
 
                 # Execute the step
                 state.global_channel = user_id  # Set the global_channel before starting the step
@@ -614,9 +617,10 @@ async def cli_events(request: CLIRequest):
     Background process initiation: If the selected step is valid, a background process (execute_tasks) is initiated to execute the step.
     """
     if state and state.step_request:
-        steps = state.variables.get("steps", {})
-        if message in steps:
-            step = message
+        choice_index = int(message) - 1
+        available_steps = state.steps
+        if 0 <= choice_index < len(available_steps):
+            step = available_steps[choice_index]
             state.step_request = False  # Step selection complete
             state.global_channel = user_id  # Set the global_channel before starting the step
             if not state.started:
