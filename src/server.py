@@ -415,7 +415,7 @@ async def execute_tasks(state, step_name):
 
     logging.info(f"Finished chat turn {n}")
     if not state.started:
-        final = await chat_manager.step({'role': 'user', 'content': "Provide your Final Answer."})
+        final = await chat_manager.step({'role': 'user', 'content': """Provide your Final Answer based on your system prompt."""})
         with open('./post.md', "w") as file:
             print(final, file=file)
         await send_response(state.global_channel, final)

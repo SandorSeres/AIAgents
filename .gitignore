@@ -1,5 +1,10 @@
 .env
 app.log
 camel_cost.csv
+interviews
+memories
+post.md
+
+config/kognitiv.yaml
 
 

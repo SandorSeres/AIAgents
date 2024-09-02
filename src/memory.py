@@ -27,7 +27,7 @@ class Memory:
         self.long_term_memory = []
         self.tool_history = []
         self.name = agent_name
-        self.memory_file = f"./memory/{agent_name}_memory.json"
+        self.memory_file = f"./memories/{agent_name}_memory.json"
         self.load_long_term_memory()
 
     def add_to_short_term(self, message, priority=1):
@@ -114,13 +114,13 @@ class Memory:
             - If the file cannot be decoded, initializes with an empty list.
         """
         try:
-            with open(f"{self.name}_long_term_memory.json", "r") as file:
+            with open(self.memory_file, "r") as file:
                 data = json.load(file)
                 self.long_term_memory = data.get('long_term_memory', [])
                 self.tool_history = data.get('tool_history', [])
-            logging.info(f"Memory loaded successfully from {self.name}_long_term_memory.json")
+            logging.info(f"Memory loaded successfully from {self.memory_file}")
         except FileNotFoundError:
-            logging.warning(f"No previous memory file found for {self.name}, starting fresh.")
+            logging.warning(f"No previous memory file found for {self.memory_file}, starting fresh.")
             self.long_term_memory = []
             self.tool_history = []
         except json.JSONDecodeError as e:
@@ -151,9 +151,9 @@ class Memory:
             # Szűrés a mentendő adatokon
             serializable_data = {k: v for k, v in data.items() if is_serializable(v)}
 
-            with open(f"{self.name}_long_term_memory.json", "w") as file:
+            with open(self.memory_file, "w") as file:
                 json.dump(serializable_data, file, indent=4)
-            logging.info(f"Memory saved successfully to {self.name}_long_term_memory.json")
+            logging.info(f"Memory saved successfully to {self.memory_file}")
         
         except Exception as e:
             logging.error(f"Error saving long-term memory: {e}", exc_info=True)

@@ -187,8 +187,8 @@ class CAMELAgent:
         try:
             completion = self.client.chat.completions.create(
                 messages=messages,
-                model='gpt-4o-mini',
-                temperature=0.2,
+                model=os.getenv("MODEL"),
+                temperature=int(os.getenv("TEMPERATURE")),
             )
             calculate_costs(completion.usage, 5, 15, 1000000)
             logging.info(f"({self.name}): OpenAI query successful.")
@@ -217,8 +217,9 @@ class CAMELAgent:
         try:
             completion = self.client.chat.completions.create(
                 messages=messages,
-                model='gpt-4o-mini',  # Replace with the actual model
-                temperature=0.2,
+                model=os.getenv("MODEL"),
+                # Replace with the actual model
+                temperature=int(os.getenv("TEMPERATURE")),
                 functions=[
                     {
                         "name": "select_tool",
