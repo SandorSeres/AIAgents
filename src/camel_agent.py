@@ -189,6 +189,7 @@ class CAMELAgent:
                 messages=messages,
                 model=os.getenv("MODEL"),
                 temperature=int(os.getenv("TEMPERATURE")),
+                seed=int(os.getenv("SEED")),
             )
             calculate_costs(completion.usage, 5, 15, 1000000)
             logging.info(f"({self.name}): OpenAI query successful.")
