@@ -116,6 +116,7 @@ class State:
         self.config_request = False  # Flag to indicate if the request is from CLI
         self.snapshot_history = []  # List to store snapshot history
         self.step_request = False  # Added step_request attribute
+        self.config_set = False
         self.steps= []
 
 # Agent initialization function
@@ -590,9 +591,9 @@ async def cli_events(request: CLIRequest):
 
 
                 # Execute the step
-                state.global_channel = user_id  # Set the global_channel before starting the step
+                session_states[user_id].global_channel = user_id  # Set the global_channel
                 if not state.started:
-                    state.started = True
+                    session_states[user_id].started = True
                     # Run the task in a separate thread
                     #loop = asyncio.get_running_loop()
                     #await loop.run_in_executor(executor, execute_tasks, state, step)

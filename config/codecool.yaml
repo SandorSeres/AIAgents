@@ -5,7 +5,7 @@ variables:
   architecture_type: 'AI-assisted Evaluation System'
   inputs:
     language: English
-    today: "23.08.2024"
+    today: "05.09.2024"
     GITHUB_REPOSITORY_URL : ${GITHUB_REPOSITORY_URL}
     GITHUB_CLONE_DIRECTORY : ./clone
     GITHUB_TOKEN : ${GITHUB_TOKEN}

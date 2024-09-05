@@ -220,6 +220,7 @@ class CAMELAgent:
                 model=os.getenv("MODEL"),
                 # Replace with the actual model
                 temperature=int(os.getenv("TEMPERATURE")),
+                seed=int(os.getenv("SEED")),
                 functions=[
                     {
                         "name": "select_tool",
