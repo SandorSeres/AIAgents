@@ -16,10 +16,11 @@ import logging
 import os
 from tools.search_tool import SearchAndRetrieveTool
 from tools.image_generation import ImageGenerationTool
-from tools.file_tool import ReadFileTool, SaveToFileTool
+from tools.file_tool import *
 from tools.dummy_tool import DummyTool
 from tools.git_tool import *
 from tools.execute_tool import *
+from tools.researchgate_tool import *
 from typing import List
 from memory import Memory
 

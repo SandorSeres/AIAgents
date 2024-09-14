@@ -4,6 +4,8 @@ camel_cost.csv
 interviews
 memories
 post.md
+*.jpg
+
 
 config/kognitiv.yaml
 config/fb_post.yaml

@@ -123,3 +123,61 @@ class SaveToFileTool:
         """
         return SaveToFileTool()
 
+class AppendToFileTool:
+    """
+    Class Name: AppendToFileTool
+    Description: A utility class designed to append generated content to a specified file within a given directory. It ensures that the directory exists before appending the file.
+
+    Attributes:
+        name (str): The name of the tool.
+        description (str): A brief description of what the tool does.
+        parameters (list): A list of parameters required by the tool, including the content to append, filename, and directory.
+
+    Methods:
+        _run(txt, filename, directory):
+            Appends the provided content to a file in the specified directory and returns the file path or an error message.
+        
+        clone():
+            Returns a new instance of AppendToFileTool.
+    """
+
+    name: str = "AppendToFileTool"
+    description: str = "A tool to append generated content to a specified file in a given directory."
+    parameters: list = ["txt", "filename", "directory"]
+
+    def _run(self, txt: str, filename: str, directory: str) -> tuple:
+        """
+        Appends the provided content to a specified file within a given directory.
+
+        Parameters:
+            txt (str): The content to append to the file.
+            filename (str): The name of the file to append the content to.
+            directory (str): The directory where the file should be saved.
+
+        Returns:
+            tuple: A tuple containing a success message with the file path or an error message if an exception occurs, along with a task_completed flag.
+        
+        Notes:
+            - The method ensures that the specified directory exists before attempting to append the file.
+            - The content is appended to the file if it exists; otherwise, it creates a new file and writes the content to it.
+        """
+        try:
+            # Ensure the directory exists
+            os.makedirs(directory, exist_ok=True)
+            # Define the file path
+            file_path = os.path.join(directory, filename)
+            # Append the content to the file
+            with open(file_path, 'a') as file:
+                file.write(txt + '\n')
+            return f"Appended to file: {file_path}", True
+        except Exception as e:
+            return f"An error occurred: {str(e)}", False
+
+    def clone(self):
+        """
+        Creates a clone of the AppendToFileTool instance.
+
+        Returns:
+            AppendToFileTool: A new instance of AppendToFileTool.
+        """
+        return AppendToFileTool()

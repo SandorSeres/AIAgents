@@ -6,7 +6,6 @@ Date: 2024-08-31
 Version: 1.0
 License: [Creative Commons Zero v1.0 Universal]
 """
-
 import openai
 from openai import OpenAI
 import requests

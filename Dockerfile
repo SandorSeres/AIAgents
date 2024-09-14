@@ -1,14 +1,17 @@
-# Alap kép meghatározása, Python 3.11 verzióval
-FROM python:3.11-slim
+# NVIDIA alapú Python képfájl használata GPU támogatással
+FROM nvidia/cuda:11.8.0-cudnn8-runtime-ubuntu22.04
 
-# Munkakönyvtár létrehozása a konténeren belül
-WORKDIR /app
-
-# A szükséges Python csomagok telepítéséhez szükséges függőségek telepítése
+# Python telepítése
 RUN apt-get update && apt-get install -y \
-    gcc git \
+    python3 python3-pip python3-dev gcc git curl libgl1-mesa-glx libglib2.0-0 \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
+
+# Frissítjük a pip-et
+RUN python3 -m pip install --upgrade pip
+
+# Munkakönyvtár létrehozása
+WORKDIR /app
 
 # A requirements fájl másolása és a pip csomagok telepítése
 COPY requirements.txt .
@@ -22,5 +25,4 @@ COPY src/ src/
 COPY static/ static/
 
 # A konténer indításakor futtatandó parancs megadása
-CMD ["python", "src/server.py"]
-
+CMD ["python3", "src/server.py"]

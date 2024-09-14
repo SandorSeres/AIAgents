@@ -25,7 +25,7 @@ class DummyTool:
             Returns a new instance of DummyTool.
     """
     
-    name: str = "FileTool"
+    name: str = "DummyTool"
     description: str = "A file tool for reading and writing files in the file system."
     parameters: str = "query"
 
@@ -43,7 +43,7 @@ class DummyTool:
             - This method is a placeholder and does not perform any actual file operations.
             - It is primarily intended for use in testing or as a simple example of tool interaction.
         """
-        return f"File tool response for query: {query}"
+        return f"File tool response for query: {query}" , True
 
     def clone(self):
         """

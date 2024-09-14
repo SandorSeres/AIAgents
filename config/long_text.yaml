@@ -1,0 +1,113 @@
+version: '1.2'
+
+variables:
+  project_name: 'Complex Multi-agent Task Execution for long documentation'
+  topic: |
+    Writing an in-depth article that explains the use of multi-agent systems in artificial intelligence.
+  language: Hungarian
+  minimum_word_count: 4000
+  file: content.md
+  directory: ./
+  roles:
+    - {"ResearchAssistant": "Responsible for conducting research and gathering content from the internet."}
+    - {"ContentStructuringAssistant": "Responsible for organizing the collected information and creating a table of contents."}
+    - {"WritingAssistant": "Responsible for writing each chapter of the article step by step."}
+ 
+  steps:
+    Write a detailed document:
+      participants: ["ResearchAssistant", "ContentStructuringAssistant", "WritingAssistant"]
+      objective: "Create a detailed article on multi-agent systems in AI, complete with research, structuring, writing."
+      output: "Final article stored in a {file} in the {directory}"
+
+agents:
+  ChatManager:
+    type: "CAMELAgent"
+    role_name: "Project Coordinator"
+    role_description: "Manages the overall process, assigns tasks to agents, and ensures the article is completed according to the requirements."
+    llm: "openai"
+    system_prompt: |
+      Your role is to oversee the full process of creating an in-depth article.
+      You will coordinate between research, structuring, writing sections.
+      - Begin by assigning research tasks to the ResearchAssistant.
+      - Once the research is completed, assign the ContentStructuringAssistant to create a detailed table of contents based on the research.
+      - The WritingAssistant will then write **one section at a time of the article according to the generated table of contents**. Ensure that the content exactly follows the structured sections and subsections.
+      - Continue iterating through each section until the full article is completed, ensuring it meets the {minimum_word_count} word minimum requirement.
+      - Important: Instruct the ContentStructuringAssistant and the WritingAssistant to save all of its output in './content.md' file.
+      - Continue iterating through each section with WritingAssistant until the full article is completed, ensuring it meets the 4000-word minimum requirement.
+      - When all sections are written and reviewed, combine them from the memory into one complete document and return it as the final answer.
+
+      When all the needed assistants have finished their jobs, the task is completed. You must then return with <CAMEL_TASK_DONE>. 
+      
+      You must instruct the assistants based on their expertise and your needs to complete the task ONLY in the following format:
+
+      {
+        "Question": "<DESCRIPTION_OF_NEXT_TASK>",
+        "Thought": "<YOUR_THOUGHT_PROCESS>",
+        "Action": "<SPECIFIC_ASSISTANT_TO_INSTRUCT>",
+        "Action Input": "<DETAILED_INSTRUCTION_FOR_ASSISTANT>",
+        "Observation": "<RESULT_OF_ASSISTANT'S_WORK>"
+      }
+    tools: 
+      pre-processing:
+        - ReadFileTool
+
+ 
+
+  ResearchAssistant:
+    type: "CAMELAgent"
+    role_name: "Research Assistant"
+    role_description: "Conducts research and gathers up-to-date information from the internet based on the given topic."
+    llm: "openai"
+    system_prompt: |
+      Your task is to gather reliable and relevant information from credible sources for the topic 'The use of multi-agent systems in AI.'
+      Provide detailed responses that are structured clearly, and include sources (URLs) for each piece of information.
+      Unless I say the task is completed, you should always start with:
+
+      Solution: <YOUR_SOLUTION>
+
+      <YOUR_SOLUTION> should be specific and provide preferable implementations and examples for task-solving.
+    tools: 
+      pre-processing:
+        - SearchAndRetrieveTool
+
+  ContentStructuringAssistant:
+    type: "CAMELAgent"
+    role_name: "Content Structuring Assistant"
+    role_description: "Responsible for organizing the research and creating a logical table of contents and store it in {directory}/{file} file ."
+    llm: "openai"
+    system_prompt: |
+      Your task is to take the research gathered and organize it into a clear and logical structure.
+      Create a table of contents that reflects the key sections and subsections of the article.
+      Unless I say the task is completed, you should always start with:
+
+      Solution: <YOUR_SOLUTION>
+
+      <YOUR_SOLUTION> should be specific and provide preferable implementations and examples for task-solving.
+    tools: 
+      post-processing:
+        - AppendToFileTool
+
+  WritingAssistant:
+    type: "CAMELAgent"
+    role_name: "Writing Assistant"
+    role_description: "Writes each chapter of the article based on the structured content and store it in {directory}/{file} file ."
+    llm: "openai"
+    system_prompt: |
+      Your task is to write **the full content** of each section of the article based on the structured content provided by the ContentStructuringAssistant.
+      Ensure that the content exactly follows the structured table of contents, and write each section with sufficient depth, detail, and clarity. No summaries—only full content!
+      After each section is completed, append your solution in the given file 
+
+      The content should match the table of contents exactly and cover all topics and subsections listed.
+
+      Unless I say the task is completed, you should always start with:
+
+      Solution: <YOUR_SOLUTION>
+
+      <YOUR_SOLUTION> should be specific and provide preferable implementations and examples for task-solving.
+      
+    tools: 
+      post-processing:
+        - AppendToFileTool
+
+interaction:
+  steps: 30

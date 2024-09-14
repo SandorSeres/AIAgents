@@ -13,7 +13,9 @@ from tools.search_tool import SearchAndRetrieveTool
 from tools.image_generation import ImageGenerationTool
 from tools.file_tool import ReadFileTool, SaveToFileTool
 from tools.dummy_tool import DummyTool
+from tools.researchgate_tool import *
 import openai
+from openai import OpenAIError
 import json
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 import requests
@@ -23,6 +25,7 @@ import re
 from memory import Memory
 from jsonschema import validate, ValidationError
 import asyncio
+import copy
 
 # Priority levels for message handling
 LOW_PRIORITY = 1
@@ -51,7 +54,7 @@ class CAMELAgent:
         headers (dict): Headers for authenticating requests to the RunPod API (only if llm is "runpod").
     """
 
-    def __init__(self, name, role, role_description, system_message, llm="openai", pre_processing_tools=[], post_processing_tools=[]):
+    def __init__(self, name, role, role_description, system_message, llm="openai", pre_processing_tools=None, post_processing_tools=None):
         """
         Initializes the CAMELAgent with the given parameters, including setting up the memory and tools.
 
@@ -70,15 +73,11 @@ class CAMELAgent:
         self.system_message = system_message
         self.llm = llm
         self.memory = Memory(name)  # Initialize memory based on agent name
-        self.pre_processing_tools = pre_processing_tools
-        self.post_processing_tools = post_processing_tools
+        self.pre_processing_tools = pre_processing_tools or []
+        self.post_processing_tools = post_processing_tools or []
         
         if llm == "openai":
-            self.client = openai.OpenAI()
-        elif llm == "runpod":
-            self.END_POINT = os.getenv("END_POINT")
-            self.BASE_URL = f"https://api.runpod.ai/v2/{self.END_POINT}/openai/v1"
-            self.headers = {"Authorization": f"Bearer {os.getenv('RUNPOD_API_KEY')}"}
+            self.client = openai
         
         logging.info(f"({self.name}): Initialized CAMELAgent with LLM: {self.llm} and tools: {[tool.name for tool in (self.pre_processing_tools + self.post_processing_tools)]}")
 
@@ -115,20 +114,20 @@ class CAMELAgent:
         self.memory.add_to_short_term(self.system_message, LOW_PRIORITY)
         logging.info(f"({self.name}): Messages initialized with system message.")
     
-    def update_messages(self, message, priority):
+    async def update_messages(self, message, priority):
         """
         Updates the agent's short-term memory with a new message, ensuring that the message content does not exceed 64k characters.
 
         Parameters:
             message (dict): The message to be added.
             priority (int): The priority level of the message.
-        
+
         Returns:
             list: The updated short-term memory.
         """
         if asyncio.iscoroutine(message['content']):
-            raise TypeError("Coroutines should be awaited before passing to update_messages.")
-        
+            message['content'] = await message['content']
+
         if len(message['content']) > 64000:
             message['content'] = message['content'][:64000]  # Truncate the message content if too large
         self.memory.add_to_short_term(message, priority=priority)
@@ -140,12 +139,12 @@ class CAMELAgent:
         Updates the tool history in the agent's memory with a new message.
 
         Parameters:
-            message (str): The message to be added to the tool history.
-        
+            message (dict): The message to be added to the tool history.
+
         Returns:
             list: The updated tool history.
         """
-        self.memory.add_to_tool_history({'role': 'user', 'content': message})
+        self.memory.add_to_tool_history(message)
         logging.debug(f"({self.name}): Updated tool history: {len(self.memory.get_tool_history())}")
         return self.memory.get_tool_history()
 
@@ -167,7 +166,7 @@ class CAMELAgent:
             raise ValueError("'role' and 'content' must be strings.")
         logging.info(f"Message structure validated: {message}")
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=10), retry=retry_if_exception_type(openai.OpenAIError))
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=10), retry=retry_if_exception_type(OpenAIError))
     async def query_openai(self, messages, max_response_tokens=32000):
         """
         Queries the OpenAI API with the given messages, using retries for reliability.
@@ -178,27 +177,27 @@ class CAMELAgent:
 
         Returns:
             str: The content of the response message.
-        
+
         Raises:
-            openai.OpenAIError: If an error occurs during the API call.
+            OpenAIError: If an error occurs during the API call.
         """
         from util import calculate_costs
         logging.info(f"({self.name}): Querying OpenAI...")
         try:
-            completion = self.client.chat.completions.create(
+            completion = await asyncio.to_thread(
+                self.client.chat.completions.create,
                 messages=messages,
                 model=os.getenv("MODEL"),
-                temperature=int(os.getenv("TEMPERATURE")),
-                seed=int(os.getenv("SEED")),
+                temperature=float(os.getenv("TEMPERATURE")),
             )
-            calculate_costs(completion.usage, 5, 15, 1000000)
+            # calculate_costs(completion['usage'], 5, 15, 1000000)
             logging.info(f"({self.name}): OpenAI query successful.")
             return completion.choices[0].message.content
-        except openai.OpenAIError as e:
+        except OpenAIError as e:
             logging.error(f"({self.name}): OpenAIError: {e}", exc_info=True)
             raise
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=10), retry=retry_if_exception_type(openai.OpenAIError))
+    @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=10), retry=retry_if_exception_type(OpenAIError))
     async def query_openai_with_function_call(self, messages, max_response_tokens=32000):
         """
         Queries the OpenAI API with function call capability, using retries for reliability.
@@ -209,19 +208,18 @@ class CAMELAgent:
 
         Returns:
             str: The content of the response message, which may include a function call.
-        
+
         Raises:
-            openai.OpenAIError: If an error occurs during the API call.
+            OpenAIError: If an error occurs during the API call.
         """
         from util import calculate_costs
         logging.info(f"({self.name}): Querying OpenAI with function call...")
         try:
-            completion = self.client.chat.completions.create(
+            completion = await asyncio.to_thread(
+                self.client.chat.completions.create,
                 messages=messages,
                 model=os.getenv("MODEL"),
-                # Replace with the actual model
-                temperature=int(os.getenv("TEMPERATURE")),
-                seed=int(os.getenv("SEED")),
+                temperature=float(os.getenv("TEMPERATURE")),
                 functions=[
                     {
                         "name": "select_tool",
@@ -243,11 +241,13 @@ class CAMELAgent:
                     }
                 ]
             )
-            calculate_costs(completion.usage, 5, 15, 1000000)
+            # calculate_costs(completion['usage'], 5, 15, 1000000)
             logging.info(f"({self.name}): OpenAI query with function call successful.")
+            print(completion)
+            print(completion.choices)
             logging.info(f"Tool decision: {completion.choices[0].message.content}")
             return completion.choices[0].message.content
-        except openai.OpenAIError as e:
+        except OpenAIError as e:
             logging.error(f"({self.name}): OpenAIError: {e}", exc_info=True)
             raise
 
@@ -334,7 +334,7 @@ class CAMELAgent:
             str: The response from the LLM.
         """
         if self.llm == "openai":
-            return self.query_openai(messages, max_response_tokens)
+            return await self.query_openai(messages, max_response_tokens)
         elif self.llm == "runpod":
             return self.query_runpod(messages, max_response_tokens)
 
@@ -423,67 +423,67 @@ class CAMELAgent:
             [f"{tool.name}: {{ \"description\": \"{tool.description}\", \"parameters\": {tool.parameters} }}" for tool in tools]
         )
         prompt = f"""
-        Here are the available tools:
-        {tool_descriptions}
+Here are the available tools:
+{tool_descriptions}
 
-        Based on the following conversation, decide which tool to use and with what parameters:
+Based on the following conversation, decide which tool to use and with what parameters:
 
-        Conversation:
-        {messages[-1]['content']}
+Conversation:
+{messages[-1]['content']}
 
-        Previous tool history:
-        {" ".join([str(message['content']) for message in self.memory.get_tool_history()])}
+Previous tool history:
+{" ".join([str(message['content']) for message in self.memory.get_tool_history()])}
 
-        Reply with the tool name and parameters to use in JSON format. If no tool is needed, reply with "No tool needed". 
+Reply with the tool name and parameters to use in JSON format. If no tool is needed, reply with "No tool needed". 
 
-        Example:
-        {{ "tool": "Toolname", "parameters": {{"parameter1": "value1", "parameter2": "value2"}} }}
-        
-        If a new tool is needed, and ONLY if the 'RunPythonTool' is in the tools list, then
-        provide the necessary Python code snippet to execute to get the needed output.
-        Be very careful and ONLY provide robust production ready code! Include all the needed imports also. The result all the time should be in a <output> variable     
-        Example1:
-        ```python
-        urls = [
-            'https://en.wikipedia.org/wiki/Daniel_Kahneman',
-            'https://en.wikipedia.org/wiki/Keith_Stanovich',
-            ]
-        # Function to extract information from a URL
-        from bs4 import BeautifulSoup
-        import requests
-        def extract_info(url):
-            response = requests.get(url)
-            soup = BeautifulSoup(response.text, 'html.parser')
-            paragraphs = soup.find_all('p')
-            text =' '.join([para.text for para in paragraphs])
-            return text
-        # Gather information from each URL
-        output = {{url: extract_info(url) for url in urls}}
-        output
-        ```
-        Example 2:
-        ```python
-        import openai
-        def create_image(text, image_style):
-            client = openai.Client()
-            prompt = f"{{text}} using the style {{image_style}}"
-            print("Image generation prompt:", prompt)
-            response = client.images.generate(
-                model="dall-e-3",
-                prompt=prompt,
-                size="1024x1024",
-                quality="standard",
-                n=1,
-            )
-            output = response['data'][0]['url']
-            return output
-        ```
-        """
+Example:
+{{ "tool": "Toolname", "parameters": {{"parameter1": "value1", "parameter2": "value2"}} }}
+
+If a new tool is needed, and ONLY if the 'RunPythonTool' is in the tools list, then
+provide the necessary Python code snippet to execute to get the needed output.
+Be very careful and ONLY provide robust production ready code! Include all the needed imports also. The result all the time should be in a <output> variable     
+Example1:
+```python
+urls = [
+    'https://en.wikipedia.org/wiki/Daniel_Kahneman',
+    'https://en.wikipedia.org/wiki/Keith_Stanovich',
+    ]
+# Function to extract information from a URL
+from bs4 import BeautifulSoup
+import requests
+def extract_info(url):
+    response = requests.get(url)
+    soup = BeautifulSoup(response.text, 'html.parser')
+    paragraphs = soup.find_all('p')
+    text =' '.join([para.text for para in paragraphs])
+    return text
+# Gather information from each URL
+output = {{url: extract_info(url) for url in urls}}
+output
+```
+Example 2:
+```python
+import openai
+def create_image(text, image_style):
+    client = openai.Client()
+    prompt = f"{{text}} using the style {{image_style}}"
+    print("Image generation prompt:", prompt)
+    response = client.images.generate(
+        model="dall-e-3",
+        prompt=prompt,
+        size="1024x1024",
+        quality="standard",
+        n=1,
+    )
+    output = response['data'][0]['url']
+    return output
+```
+"""
         
         attempt = 0
         while attempt < max_retries:
             response = await self.query_openai_with_function_call([{"role": "system", "content": prompt}])
-            if response == None:
+            if response is None:
                 response = "No tool needed" 
             if "no tool needed" in response.strip().lower():
                 return response.strip()
@@ -499,13 +499,13 @@ class CAMELAgent:
             logging.warning(f"Received invalid JSON. Cannot fix it: {json_string}. Asking OpenAI to correct it.")
             
             correction_prompt = f"""
-            The JSON you provided is invalid. Please correct the following JSON:
+The JSON you provided is invalid. Please correct the following JSON:
 
-            Invalid JSON:
-            {json_string}
+Invalid JSON:
+{json_string}
 
-            Correct the JSON and reply with a valid JSON format.
-            """
+Correct the JSON and reply with a valid JSON format.
+"""
             
             correction_response = await self.query_openai_with_function_call([{"role": "system", "content": correction_prompt}])
             if isinstance(correction_response, dict):
@@ -513,7 +513,7 @@ class CAMELAgent:
             else:
                 correction_content = correction_response
 
-            if correction_content == None:
+            if correction_content is None:
                 correction_content = "No tool needed"
             if "no tool needed" in correction_content.strip().lower():
                 return correction_content.strip()
@@ -525,7 +525,7 @@ class CAMELAgent:
             
             attempt += 1
             logging.warning(f"Correction attempt {attempt} failed. Retrying in {delay} seconds...")
-            time.sleep(delay)  # Delay before retrying
+            await asyncio.sleep(delay)  # Delay before retrying
         
         logging.error(f"Failed to get a valid JSON response after {max_retries} attempts.")
         return json.loads("{}")  # Return empty JSON if still unable to get a valid response
@@ -564,18 +564,16 @@ class CAMELAgent:
             logging.info(f"({self.name}): No tools available.")
             return None, True
 
-        tool_decision = self.get_tool(messages, tools)
+        tool_decision = await self.get_tool(messages, tools)
         logging.info(f"({self.name}): Tool decision: {tool_decision}")
 
-        if tool_decision == None:
-            tool_decision = "No tool needed"
-        if tool_decision and "no tool needed" in tool_decision.strip().lower():
+        if tool_decision is None or (isinstance(tool_decision, str) and "no tool needed" in tool_decision.strip().lower()):
             return None, True
 
         try:
             tool_decision = json.loads(self.extract_json_string(tool_decision))
             tool_name = tool_decision['tool']
-            params = tool_decision['parameters']
+            params = tool_decision.get('parameters', {})
 
             for tool in tools:
                 if tool.name == tool_name:
@@ -605,12 +603,12 @@ class CAMELAgent:
                                 detailed_error_message = f"{error_message}\n\nPrevious Attempts:\n{history_context}"
                                 self.update_tool_history({'role': 'user', 'content': detailed_error_message})
 
-                                fix_suggestion = self.query([{'role': 'user', 'content': detailed_error_message}])
+                                fix_suggestion = await self.query([{'role': 'user', 'content': detailed_error_message}])
                                 if "Exception" in fix_suggestion:
                                     logging.warning(f"({self.name}): Retrying due to exception in fix suggestion: {fix_suggestion}")
-                                    time.sleep(5)
+                                    await asyncio.sleep(5)
                                 else:
-                                    result = self.query([{'role': 'system', 'content': fix_suggestion}])
+                                    result = await self.query([{'role': 'system', 'content': fix_suggestion}])
                                     logging.info(f"({self.name}): Tool fix suggestion applied: {result}")
                                     break
                             else:
@@ -635,13 +633,13 @@ class CAMELAgent:
         Returns:
             str or dict: The output message after processing, or an error message.
         """
-        self.update_messages(input_message, LOW_PRIORITY)
+        await self.update_messages(input_message, LOW_PRIORITY)
 
         output_message = None
 
         if self.pre_processing_tools:
             tool_decision = await self.get_tool(self.memory.get_short_term_messages(), self.pre_processing_tools)
-            if isinstance(tool_decision, str):
+            if isinstance(tool_decision, str) and "no tool needed" in tool_decision.strip().lower():
                 tool_decision = None
 
             if tool_decision:
@@ -654,7 +652,7 @@ class CAMELAgent:
                             tool_result, task_completed = tool._run(**params)
                             if task_completed:
                                 self.update_tool_history({'role': 'user', 'content': tool_result})
-                                self.update_messages({'role': 'user', 'content': tool_result}, MEDIUM_PRIORITY)
+                                await self.update_messages({'role': 'user', 'content': tool_result}, MEDIUM_PRIORITY)
                                 break
                         except Exception as e:
                             logging.error(f"({self.name}): Error applying pre-processing tool {tool_name}: {e}", exc_info=True)
@@ -665,11 +663,11 @@ class CAMELAgent:
         if asyncio.iscoroutine(output_message):
             output_message = await output_message
 
-        self.update_messages({'role': 'user', 'content': output_message}, HIGH_PRIORITY)
+        await self.update_messages({'role': 'assistant', 'content': output_message}, HIGH_PRIORITY)
 
         if self.post_processing_tools:
             tool_decision = await self.get_tool(self.memory.get_short_term_messages(), self.post_processing_tools)
-            if isinstance(tool_decision, str):
+            if isinstance(tool_decision, str) and "no tool needed" in tool_decision.strip().lower():
                 tool_decision = None
 
             if tool_decision:
@@ -684,7 +682,7 @@ class CAMELAgent:
                                 if task_completed:
                                     output_message += tool_result
                                     self.update_tool_history({'role': 'user', 'content': tool_result})
-                                    self.update_messages({'role': 'user', 'content': tool_result}, MEDIUM_PRIORITY)
+                                    await self.update_messages({'role': 'user', 'content': tool_result}, MEDIUM_PRIORITY)
                                     break
                             except Exception as e:
                                 logging.error(f"({self.name}): Error applying post-processing tool {tool_name}: {e}", exc_info=True)
@@ -720,7 +718,7 @@ class CAMELAgent:
             CAMELAgent: A new instance of CAMELAgent with the same configuration and memory state.
         """
         cloned_agent = CAMELAgent(self.name, self.role, self.role_description, self.system_message, self.llm)
-        cloned_agent.memory.short_term_memory = self.memory.get_short_term_memory().copy()
+        cloned_agent.memory.short_term_memory = copy.deepcopy(self.memory.get_short_term_memory())
         cloned_agent.pre_processing_tools = [tool.clone() for tool in self.pre_processing_tools]
         cloned_agent.post_processing_tools = [tool.clone() for tool in self.post_processing_tools]
         return cloned_agent
@@ -737,10 +735,10 @@ class CAMELAgent:
         """
         text_data = " ".join([item['content'] for item in messages])
         sys_msg = """
-            You are a tool for summarizing and abstracting text.
-            Return the summarized text to less than 2000 words using markdown format.
-            The generated summary should be in the same language as the original text.
-            """
+You are a tool for summarizing and abstracting text.
+Return the summarized text to less than 2000 words using markdown format.
+The generated summary should be in the same language as the original text.
+"""
         if self.llm == "openai":
             summary = await self.query_openai([{'role': 'system', 'content': f"{sys_msg}: {text_data}"}])
         elif self.llm == "runpod":
@@ -757,7 +755,7 @@ class CAMELAgent:
         filtered_messages = self.memory.filter_combined(self.memory.get_short_term_memory(), keyword, min_priority)
         
         if filtered_messages:
-            summarized_message = self.summarize_data_with_llm(filtered_messages)
+            summarized_message = await self.summarize_data_with_llm(filtered_messages)
             self.memory.add_to_long_term(summarized_message)
         
         self.memory.save_long_term_memory()
@@ -788,4 +786,3 @@ if __name__ == "__main__":
 
     response = agent.step(input_message)
     print(response)
-

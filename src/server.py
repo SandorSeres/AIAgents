@@ -24,8 +24,6 @@ import json
 from human_agent import HumanAgent
 from datetime import datetime  # For timestamping logs and events
 from pydantic import BaseModel  # For request validation
-#from concurrent.futures import ThreadPoolExecutor
-from multiprocessing import Process
 
 load_dotenv()
 
@@ -34,7 +32,7 @@ def load_available_configs():
     Function Name: load_available_configs
     Description: Loads configuration settings from environment variables that start with "CONFIG_".
                  These configurations are used to initialize agents with specific roles and tasks.
-    
+
     Returns:
         dict: A dictionary where keys are the configuration names and values are the associated configurations.
     """
@@ -48,17 +46,8 @@ def load_available_configs():
 available_configs = load_available_configs()
 app = FastAPI()
 
-#executor = ThreadPoolExecutor()
-def execute_in_process(state, step):
-    """
-    Function Name: execute_in_process
-    Description: Executes tasks in a separate process. It is designed to handle tasks that need to be isolated from the main process.
-    
-    Parameters:
-        state (State): The current state of the session for the user.
-        step (str): The specific step or task to execute.
-    """
-    execute_tasks(state, step)
+# Global lock for protecting shared resources
+global_lock = asyncio.Lock()
 
 # CORS middleware setup
 app.add_middleware(
@@ -99,6 +88,10 @@ class State:
         config_request (bool): Flag indicating if the request originated from the CLI.
         snapshot_history (list): A list to store snapshots of the session state.
         step_request (bool): Indicates if a step selection is awaited from the user.
+        conversation_history (list): Stores the conversation history.
+        websocket (WebSocket): The WebSocket connection associated with the user.
+        message_queue (asyncio.Queue): Queue for outgoing messages to the client.
+        lock (asyncio.Lock): Lock for protecting session-specific resources.
     """
 
     def __init__(self):
@@ -117,7 +110,11 @@ class State:
         self.snapshot_history = []  # List to store snapshot history
         self.step_request = False  # Added step_request attribute
         self.config_set = False
-        self.steps= []
+        self.steps = []
+        self.conversation_history = []  # Added conversation_history attribute
+        self.websocket = None
+        self.message_queue = asyncio.Queue()
+        self.lock = asyncio.Lock()  # Lock for session-specific resources
 
 # Agent initialization function
 def initialize_agents(state):
@@ -157,10 +154,10 @@ def get_or_create_user_state(user_id):
     """
     Function Name: get_or_create_user_state
     Description: Retrieves the state object for a given user ID. If no state exists, it creates one and initializes the agents.
-    
+
     Parameters:
         user_id (str): The unique identifier for the user.
-    
+
     Returns:
         State: The state object associated with the user.
     """
@@ -171,89 +168,71 @@ def get_or_create_user_state(user_id):
 @app.websocket("/ws/{user_id}")
 async def websocket_endpoint(websocket: WebSocket, user_id: str):
     await websocket.accept()
-    ws_clients[user_id] = websocket
+    state = get_or_create_user_state(user_id)
+    async with global_lock:
+        ws_clients[user_id] = websocket
+    state.websocket = websocket  # Add WebSocket to the user's state
+    state.global_channel = user_id  # Set the global_channel to the user_id
     logging.info(f"WebSocket connection established for user: {user_id}")
+
+    # Start a task to send messages to the client
+    asyncio.create_task(client_sender(state))
 
     try:
         while True:
-            data_task = asyncio.create_task(websocket.receive_text())
-            keepalive_task = asyncio.create_task(asyncio.sleep(30))  # Keep-alive időzítő
-            done, pending = await asyncio.wait(
-                [data_task, keepalive_task],
-                return_when=asyncio.FIRST_COMPLETED
-            )
-
-            if data_task in done:
-                data = data_task.result()
-                logging.info(f"Message received from {user_id}: {data}")
-                await websocket.send_text(f"Message text was: {data}")
-            else:
-                logging.info(f"Sending keep-alive ping to user: {user_id}")
-                await websocket.send_text("ping")
-            
-            for task in pending:
-                task.cancel()
-
+            data = await websocket.receive_text()
+            logging.info(f"Message received from {user_id}: {data}")
+            # Process incoming messages if needed
     except WebSocketDisconnect:
         logging.info(f"WebSocket connection closed for user: {user_id}")
+        async with global_lock:
+            if user_id in ws_clients:
+                del ws_clients[user_id]
+        state.websocket = None
     except Exception as e:
         logging.error(f"WebSocket connection error for user {user_id}: {e}", exc_info=True)
     finally:
-        if user_id in ws_clients:
-            del ws_clients[user_id]
-            
-# Enhanced monitoring and snapshot function
-async def get_queue_items(queue):
+        async with global_lock:
+            if user_id in ws_clients:
+                del ws_clients[user_id]
+        state.websocket = None
+
+async def client_sender(state):
     """
-    Function Name: get_queue_items
-    Description: Helper function to retrieve all items currently in an asyncio.Queue without removing them.
-    
+    Function Name: client_sender
+    Description: Sends messages from the state's message queue to the client's WebSocket.
+
     Parameters:
-        queue (asyncio.Queue): The asyncio queue from which to retrieve items.
-    
-    Returns:
-        list: A list of items currently in the queue.
+        state (State): The current state of the session for the user.
     """
-    items = []
-    temp_queue = asyncio.Queue()  # Temporary queue to hold items
-
+    logging.info(f"client_sender started for user: {state.global_channel}")
     try:
-        logging.info("Starting to retrieve items from queue...")
-        while not queue.empty():
-            item = await queue.get()
-            logging.info(f"Item retrieved: {item}")
-            items.append(item)
-            await temp_queue.put(item)  # Put it into the temporary queue
-
-        # Put all items back into the original queue
-        while not temp_queue.empty():
-            item = await temp_queue.get()
-            await queue.put(item)
-        
-        logging.info(f"All items retrieved from queue: {items}")
+        while True:
+            message = await state.message_queue.get()
+            logging.info(f"client_sender: Sending message to client: {message}")
+            if state.websocket:
+                await state.websocket.send_text(message)
+                logging.info(f"Message sent to client {state.global_channel}")
+            else:
+                logging.warning("WebSocket connection is closed.")
     except Exception as e:
-        logging.error(f"Error while retrieving items from queue: {e}", exc_info=True)
+        logging.error(f"Error in client_sender: {e}", exc_info=True)
 
-    return items
-
+# Enhanced monitoring and snapshot function
 async def create_system_snapshot(state):
     """
     Function Name: create_system_snapshot
-    Description: Captures the current state of the system, including agent states, current tasks, and interactions. 
+    Description: Captures the current state of the system, including agent states, current tasks, and interactions.
                  The snapshot is stored in the session's history for later analysis.
-    
+
     Parameters:
         state (State): The current state of the session for the user.
-    
+
     Returns:
         dict: A snapshot of the current system state.
     """
     try:
         logging.info("Creating system snapshot...")
-
-        # Retrieve current tasks from the queue
-        current_tasks = await get_queue_items(state.task_queue)  # Await the async function to get queue items
-        logging.info(f"Current tasks retrieved: {current_tasks}")
 
         # Capture the state of each agent
         agents_state = {role_name: agent.get_state() for role_name, agent in state.all_agents.items()}
@@ -263,7 +242,7 @@ async def create_system_snapshot(state):
         snapshot = {
             "timestamp": datetime.now().isoformat(),
             "agents_state": agents_state,
-            "current_tasks": current_tasks,
+            "current_tasks": [],  # Placeholder, as we cannot access queue items directly
             "user_to_agent": state.user_to_agent,
             "interaction": state.interaction
         }
@@ -284,7 +263,7 @@ async def execute_tasks(state, step_name):
     Function Name: execute_tasks
     Description: Coordinates the execution of tasks across multiple agents within a specific step of the session.
                  It manages the interaction between agents and handles retries in case of errors.
-    
+
     Parameters:
         state (State): The current state of the session for the user.
         step_name (str): The name of the step to be executed.
@@ -334,6 +313,10 @@ async def execute_tasks(state, step_name):
     n = 0
     chat_manager = state.agents['ChatManager']
 
+    # Initialize conversation history if not already done
+    if not state.conversation_history:
+        state.conversation_history = []
+
     while n < chat_turn_limit:
         n += 1
         logging.info(f"Starting chat turn {n}")
@@ -346,6 +329,12 @@ async def execute_tasks(state, step_name):
                 manager_msg = {'role': 'user', 'content': json.dumps(context)}
                 manager_output = await chat_manager.step(manager_msg)
                 await send_response(state.global_channel, manager_output)
+
+                # Update conversation history with manager's output
+                state.conversation_history.append({
+                    'sender': 'ChatManager',
+                    'message': manager_output
+                })
 
                 if "CAMEL_TASK_DONE" in manager_output:
                     logging.info("Task done!")
@@ -371,14 +360,28 @@ async def execute_tasks(state, step_name):
         assistant_agent = state.agents[assistant_name]
         assistant_msg = {
             'role': 'user',
-            'content': f"Instruction: {parsed_instruction['Question']}\nThought: {parsed_instruction['Thought']}\nAction Input: {parsed_instruction['Action Input']}\nInput: {inputs}\nPrevious response: {assistant_response}"
+            'content': f"""
+                Instruction: {parsed_instruction['Question']}\n
+                Thought: {parsed_instruction['Thought']}\n
+                Action Input: {parsed_instruction['Action Input']}\n
+                Conversation History: {state.conversation_history}\n
+                Input: {inputs}\n
+                Previous response: {assistant_response}
+            """
         }
 
         logging.info(f"AI user (ChatManager): {assistant_msg}")
+
+        # Update conversation history with assistant message
+        state.conversation_history.append({
+            'sender': 'Assistant',
+            'message': assistant_msg['content']
+        })
+
         if isinstance(assistant_agent, HumanAgent):
             state.expected_human_agent = assistant_name
             await state.task_queue.put(parsed_instruction['Action Input'])
-            logging.info("Chatmanager put question to task_queue!")
+            logging.info("ChatManager put question to task_queue!")
             await send_task_to_human_agent(state, assistant_name, parsed_instruction['Action Input'])
             response = await wait_for_human_response(state, assistant_name)
             if response is None:
@@ -386,7 +389,6 @@ async def execute_tasks(state, step_name):
                 break
             assistant_msg['content'] += f"\nHuman response: {response}"
             state.expected_human_agent = None
-
 
         # Assistant step
         logging.info(f"Preparing to send the following message to {assistant_name}: {assistant_msg}")
@@ -397,7 +399,8 @@ async def execute_tasks(state, step_name):
                 if asyncio.iscoroutinefunction(assistant_agent.step):
                     assistant_response = await assistant_agent.step(assistant_msg)
                 else:
-                    assistant_response = assistant_agent.step(assistant_msg)
+                    loop = asyncio.get_event_loop()
+                    assistant_response = await loop.run_in_executor(None, assistant_agent.step, assistant_msg)
                 logging.info(f"AI Assistant ({assistant_agent.name}): {assistant_response}")
                 break
             except Exception as e:
@@ -409,6 +412,13 @@ async def execute_tasks(state, step_name):
             assistant_response = "Solution: No solution as there was an error in assistant step"
 
         await send_response(state.global_channel, assistant_response)
+
+        # Update conversation history with assistant's response
+        state.conversation_history.append({
+            'sender': assistant_name,
+            'message': assistant_response
+        })
+
         inputs["previous_response"] = assistant_response
 
     logging.info(f"Finished chat turn {n}")
@@ -425,11 +435,11 @@ async def wait_for_human_response(state, assistant_name):
     """
     Function Name: wait_for_human_response
     Description: Waits for a response from a human agent with a specified timeout.
-    
+
     Parameters:
         state (State): The current state of the session for the user.
         assistant_name (str): The name of the human agent expected to respond.
-    
+
     Returns:
         str: The response received from the human agent, or None if a timeout occurs.
     """
@@ -445,7 +455,7 @@ async def wait_for_human_response(state, assistant_name):
     response = await state.response_queue.get()
     logging.info(f"Received response from queue: {response}")
 
-    # Naplózás az ügynök nevével és a válasszal
+    # Logging with the agent's name and response
     logging.info(f"Passing response to assistant: {assistant_name}")
     return response
 
@@ -453,29 +463,34 @@ async def send_task_to_human_agent(state, assistant_name, msg):
     """
     Function Name: send_task_to_human_agent
     Description: Sends a task to the appropriate human agent via WebSocket.
-    
+
     Parameters:
         state (State): The current state of the session for the user.
         assistant_name (str): The name of the human agent to whom the task is assigned.
         msg (str): The message or task details to be sent to the human agent.
     """
-    # Send the task to the appropriate WebSocket client
-    for user_id, agent_name in state.user_to_agent.items():
-        if agent_name == assistant_name:
-            websocket = ws_clients.get(user_id)
-            if websocket:
-                await websocket.send_text(f"Task assigned to {assistant_name}: {msg}")
+    # Send the task to the appropriate client's message queue
+    for user_id, agent in state.user_to_agent.items():
+        if agent == assistant_name:
+            target_state = session_states.get(user_id)
+            if target_state and target_state.websocket:
+                await target_state.message_queue.put(f"Task assigned to {assistant_name}: {msg}")
                 logging.info(f"Task sent to {assistant_name}: {msg}")
                 return
             else:
                 logging.error(f"No WebSocket connection found for {assistant_name} (user_id: {user_id})")
+                await send_response(state.global_channel, f"No WebSocket connection found for {assistant_name}")
+                return
+
+    logging.error(f"No user associated with assistant_name: {assistant_name}")
+    await send_response(state.global_channel, f"No user associated with assistant_name: {assistant_name}")
 
 # Send response through WebSocket
 async def send_response(channel: str, message: str):
     """
     Function Name: send_response
     Description: Sends a formatted response message through WebSocket to the specified channel.
-    
+
     Parameters:
         channel (str): The channel or user ID to which the response should be sent.
         message (str): The message content to be sent.
@@ -483,23 +498,22 @@ async def send_response(channel: str, message: str):
     formatted_message = format_message(message)
     logging.info(f"Sending response to channel {channel}: {formatted_message}")
 
-    # Send message to the appropriate WebSocket client
-    websocket = ws_clients.get(channel)
-    if websocket:
-        tasks = []
-        tasks.append(asyncio.create_task(websocket.send_text(formatted_message)))
-        await asyncio.gather(*tasks)
+    # Send message to the appropriate client's message queue
+    state = session_states.get(channel)
+    if state and state.message_queue:
+        await state.message_queue.put(formatted_message)
+        logging.info(f"Message added to message_queue for user {channel}")
     else:
-        logging.warning(f"No WebSocket connection found for channel: {channel}")
+        logging.warning(f"No message queue found for channel: {channel}")
 
 def format_message(message: str) -> str:
     """
     Function Name: format_message
     Description: Formats a message by converting it to JSON if necessary. This function ensures that the message is properly structured before sending it.
-    
+
     Parameters:
         message (str): The message content to be formatted.
-    
+
     Returns:
         str: The formatted message.
     """
@@ -532,77 +546,76 @@ async def cli_events(request: CLIRequest):
     Function Name: cli_events
     Description: Handles CLI events by processing the user's text input and executing the corresponding actions.
                  It manages the state of the session and triggers agent initialization or task execution as needed.
-    
+
     Parameters:
         request (CLIRequest): The request object containing the user ID and text input.
-    
+
     Returns:
         JSONResponse: A response indicating the outcome of the CLI event processing.
     """
     user_id = request.user_id
     message = request.text.strip().lower()
 
-    state = session_states.get(user_id)
-    if state and state.expected_human_agent:
+    # Always initialize or get the user's state
+    state = get_or_create_user_state(user_id)
+
+    if state.expected_human_agent:
         logging.info(f"Received human response: {message}")
         await state.response_queue.put(message)  # Insert the response into the queue
         state.human_agent_response_received.set()  # Set the event
         state.expected_human_agent = None  # Reset after handling the human response
         return JSONResponse({"message": "Human agent response received."}, status_code=200)
 
-    if message == "start" and not state:
-        config_options = list(available_configs.keys())
-        options_text = "\n".join([f"{i+1}. {option}" for i, option in enumerate(config_options)])
-        await send_response(user_id, f"Please choose a configuration by typing the corresponding number:\n{options_text}")
-        get_or_create_user_state(user_id)
-        session_states[user_id].config_request = True
-        session_states[user_id].global_channel = user_id  # Set the global_channel
-        return JSONResponse({"message": "Configuration choice requested."}, status_code=200)
-    """
-    Client-side state management: This branch is executed when state.config_request is true, indicating that the user is in the process of choosing a configuration.
-    Configuration selection: The user must provide a number corresponding to an item in the list of configurations.
-    Step selection: If only one step is available in the configuration, it is automatically selected. If there are multiple steps, the user is prompted to choose one.
-    Background process initiation: Once a step is chosen, a background process (execute_tasks) is initiated to execute the step.
-    """
-    if state and state.config_request:
+    if message == "start":
+        if not state.config_request and not state.config_set:
+            config_options = list(available_configs.keys())
+            if not config_options:
+                await send_response(user_id, "No configurations available.")
+                return JSONResponse({"message": "No configurations found."}, status_code=400)
+            options_text = "\n".join([f"{i+1}. {option}" for i, option in enumerate(config_options)])
+            await send_response(user_id, f"Please choose a configuration by typing the corresponding number:\n{options_text}")
+            state.config_request = True
+            state.global_channel = user_id  # Set the global_channel
+            return JSONResponse({"message": "Configuration choice requested."}, status_code=200)
+        else:
+            await send_response(user_id, "Configuration is already in progress or set.")
+            return JSONResponse({"message": "Configuration already in progress or set."}, status_code=200)
+
+    if state.config_request:
+        # Handle configuration selection
         try:
             choice_index = int(message) - 1
-            if 0 <= choice_index < len(available_configs):
-                chosen_config_key = list(available_configs.keys())[choice_index]
+            config_options = list(available_configs.keys())
+            if 0 <= choice_index < len(config_options):
+                chosen_config_key = config_options[choice_index]
                 chosen_config_path = available_configs[chosen_config_key]
                 os.environ["CONFIG"] = chosen_config_path
                 state.config_request = False
                 state.config_set = True
                 initialize_agents(state)
-                
+
                 # Step selection
-                state.steps = state.variables.get("steps", [])
+                state.steps = state.variables.get("steps", {})
                 if len(state.steps) == 1:
-                    step = list(state.steps.keys())[0]  # If only one item, select automatically
-                else:
+                    step = list(state.steps.keys())[0]  # If only one step, select automatically
+                    state.step_request = False
+                elif len(state.steps) > 1:
                     step_options = list(state.steps.keys())
                     options_text = "\n".join([f"{i+1}. {option}" for i, option in enumerate(step_options)])
                     await send_response(user_id, f"Please choose a step to start by typing the corresponding number:\n{options_text}")
-                    session_states[user_id].steps = step_options
-                    session_states[user_id].step_request = True
-                    session_states[user_id].global_channel = user_id  # Set the global_channel
-                    return JSONResponse({"message": "Configuration choice requested."}, status_code=200)
+                    state.steps = step_options
+                    state.step_request = True
+                    state.global_channel = user_id  # Set the global_channel
+                    return JSONResponse({"message": "Step choice requested."}, status_code=200)
+                else:
+                    await send_response(user_id, "No steps available in the selected configuration.")
+                    return JSONResponse({"message": "No steps found in configuration."}, status_code=400)
 
-
-
-                # Execute the step
-                session_states[user_id].global_channel = user_id  # Set the global_channel
+                # Execute the step if only one is available
+                state.global_channel = user_id  # Set the global_channel
                 if not state.started:
-                    session_states[user_id].started = True
-                    # Run the task in a separate thread
-                    #loop = asyncio.get_running_loop()
-                    #await loop.run_in_executor(executor, execute_tasks, state, step)
-                    # asyncio only
+                    state.started = True
                     asyncio.create_task(execute_tasks(state, step))
-                    # Run in a separate process
-                    #process = Process(target=execute_in_process, args=(state, step))
-                    #process.start()
-
                     return JSONResponse({"message": f"Process for '{chosen_config_key}' and step '{step}' started."}, status_code=200)
                 else:
                     return JSONResponse({"message": "Process already running."}, status_code=400)
@@ -612,39 +625,33 @@ async def cli_events(request: CLIRequest):
             await send_response(user_id, "Invalid input. Please enter a number corresponding to the configuration.")
         return JSONResponse({"message": "Configuration choice processed."}, status_code=200)
 
-    """
-    Step selection: This branch is executed when state.step_request is true, indicating that the user is selecting a step based on the chosen configuration.
-    Step validation: Checks if the step selected by the user exists in the steps list.
-    Background process initiation: If the selected step is valid, a background process (execute_tasks) is initiated to execute the step.
-    """
-    if state and state.step_request:
-        choice_index = int(message) - 1
-        available_steps = state.steps
-        if 0 <= choice_index < len(available_steps):
-            step = available_steps[choice_index]
-            state.step_request = False  # Step selection complete
-            state.global_channel = user_id  # Set the global_channel before starting the step
-            if not state.started:
-                state.started = True
-                # Run the task in a separate thread
-                #loop = asyncio.get_running_loop()
-                #await loop.run_in_executor(executor, execute_tasks, state, step)
-                # asyncio only
-                asyncio.create_task(execute_tasks(state, step))
-                # Separate process
-                #process = Process(target=execute_in_process, args=(state, step))
-                #process.start()
-                return JSONResponse({"message": f"Step '{step}' started."}, status_code=200)
+    if state.step_request:
+        # Handle step selection
+        try:
+            choice_index = int(message) - 1
+            available_steps = state.steps
+            if 0 <= choice_index < len(available_steps):
+                step = available_steps[choice_index]
+                state.step_request = False  # Step selection complete
+                state.global_channel = user_id  # Set the global_channel before starting the step
+                if not state.started:
+                    state.started = True
+                    asyncio.create_task(execute_tasks(state, step))
+                    return JSONResponse({"message": f"Step '{step}' started."}, status_code=200)
+                else:
+                    return JSONResponse({"message": "Process already running."}, status_code=400)
             else:
-                return JSONResponse({"message": "Process already running."}, status_code=400)
-        else:
-            await send_response(user_id, "Invalid step choice. Please try again.")
-            return JSONResponse({"message": "Invalid step choice."}, status_code=400)
+                await send_response(user_id, "Invalid step choice. Please try again.")
+                return JSONResponse({"message": "Invalid step choice."}, status_code=400)
+        except ValueError:
+            await send_response(user_id, "Invalid input. Please enter a number corresponding to the step.")
+            return JSONResponse({"message": "Invalid step input."}, status_code=400)
 
-    if not state or not state.config_set:
+    if not state.config_set:
         await send_response(user_id, "Please start by typing 'start' and choosing a configuration.")
         return JSONResponse({"message": "Start not initiated properly."}, status_code=400)
 
+    # Handle other messages
     await send_response(user_id, f"Received message: {message}")
     return JSONResponse({"message": "Message processed."}, status_code=200)
 
@@ -655,4 +662,3 @@ if __name__ == "__main__":
         uvicorn.run(app, host="0.0.0.0", port=8081)
     except Exception as e:
         logging.error(f"Error in main execution: {e}", exc_info=True)
-
