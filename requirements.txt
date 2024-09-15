@@ -7,6 +7,7 @@ langchain_experimental
 markdown
 numpy
 openai
+tiktoken
 pydantic
 python-dotenv
 pyyaml

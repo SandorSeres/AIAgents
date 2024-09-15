@@ -16,6 +16,7 @@ from tools.dummy_tool import DummyTool
 from tools.researchgate_tool import *
 import openai
 from openai import OpenAIError
+import tiktoken
 import json
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 import requests
@@ -31,6 +32,8 @@ import copy
 LOW_PRIORITY = 1
 MEDIUM_PRIORITY = 2
 HIGH_PRIORITY = 3
+
+MAX_TOKENS = 128000  # A modell maximális token limitje
 
 class CAMELAgent:
     """
@@ -67,6 +70,7 @@ class CAMELAgent:
             pre_processing_tools (list): List of tools for pre-processing.
             post_processing_tools (list): List of tools for post-processing.
         """
+        self.encoding = tiktoken.get_encoding("cl100k_base")  # Állítsd be a megfelelő encoding-et
         self.name = name
         self.role = role
         self.role_description = role_description
@@ -81,6 +85,23 @@ class CAMELAgent:
         
         logging.info(f"({self.name}): Initialized CAMELAgent with LLM: {self.llm} and tools: {[tool.name for tool in (self.pre_processing_tools + self.post_processing_tools)]}")
 
+    def count_tokens(self, messages, encoding):
+        """
+        Számolja meg a tokenek számát az üzenetlistában.
+
+        Parameters:
+            messages (list): Az üzenetek listája.
+            encoding (tiktoken.Encoding): A használt token encoding.
+
+        Returns:
+            int: A tokenek összszáma.
+        """
+        try:
+            count = sum(len(encoding.encode(message['content'])) for message in messages)
+        except:
+            pass
+        return count
+
     def get_state(self):
         """
         Retrieves the current state of the agent, including memory and tool history.
@@ -91,7 +112,7 @@ class CAMELAgent:
         state = {
             'name': self.name,
             'role': self.role,
-            'short_term_memory': self.memory.get_short_term_memory(),
+            'short_term_memory': self.memory.get_short_term_messages(),
             'tool_history': self.memory.get_tool_history(),
             'llm': self.llm,
             'pre_processing_tools': [tool.name for tool in self.pre_processing_tools],
@@ -116,22 +137,34 @@ class CAMELAgent:
     
     async def update_messages(self, message, priority):
         """
-        Updates the agent's short-term memory with a new message, ensuring that the message content does not exceed 64k characters.
+        Frissíti az üzenetek listáját egy új üzenettel, és korlátozza a tokenek számát.
 
         Parameters:
-            message (dict): The message to be added.
-            priority (int): The priority level of the message.
+            message (dict): Az üzenet, amit hozzáadunk.
+            priority (int): Az üzenet prioritása.
 
         Returns:
-            list: The updated short-term memory.
+            list: A frissített üzenetek listája.
         """
         if asyncio.iscoroutine(message['content']):
             message['content'] = await message['content']
 
         if len(message['content']) > 64000:
             message['content'] = message['content'][:64000]  # Truncate the message content if too large
+
         self.memory.add_to_short_term(message, priority=priority)
-        logging.debug(f"({self.name}): Updated short-term memory: {len(self.memory.get_short_term_memory())}")
+        logging.debug(f"({self.name}): Updated short-term memory: {len(self.memory.get_short_term_messages())}")
+
+        # Tokenek számának ellenőrzése és korlátozása
+        total_tokens = self.count_tokens(self.memory.get_short_term_messages(), self.encoding)
+        logging.debug(f"({self.name}): Total tokens after update: {total_tokens}")
+
+        while total_tokens > MAX_TOKENS:
+            # Távolítsd el a legrégebbi üzenetet
+            removed_message = self.memory.get_short_term_memory().pop(0)
+            logging.info(f"({self.name}): Removed oldest message to reduce tokens: {removed_message}")
+            total_tokens = self.count_tokens(self.memory.get_short_term_messages(), self.encoding)
+
         return self.memory.get_short_term_memory()
         
     def update_tool_history(self, message):
@@ -183,6 +216,19 @@ class CAMELAgent:
         """
         from util import calculate_costs
         logging.info(f"({self.name}): Querying OpenAI...")
+        # Ellenőrizd a tokenek számát és szükség esetén összefoglalás
+        total_tokens = self.count_tokens(messages, self.encoding)
+        if total_tokens > MAX_TOKENS:
+            logging.warning(f"({self.name}): Token limit exceeded ({total_tokens} tokens). Summarizing messages.")
+            # Hívj meg egy összefoglaló függvényt, hogy csökkentsd a tokenek számát
+            summarized_message = await self.summarize_data_with_llm(messages)
+            self.memory.reset_short_term()
+            self.memory.add_to_short_term(self.system_message, LOW_PRIORITY)
+            self.memory.add_to_short_term(summarized_message, priority=MEDIUM_PRIORITY)
+            messages = self.memory.get_short_term_messages()
+            total_tokens = self.count_tokens(messages, self.encoding)
+            logging.info(f"({self.name}): Token count after summarization: {total_tokens}")
+
         try:
             completion = await asyncio.to_thread(
                 self.client.chat.completions.create,
@@ -214,6 +260,19 @@ class CAMELAgent:
         """
         from util import calculate_costs
         logging.info(f"({self.name}): Querying OpenAI with function call...")
+        # Ellenőrizd a tokenek számát és szükség esetén összefoglalás
+        total_tokens = self.count_tokens(messages, self.encoding)
+        if total_tokens > MAX_TOKENS:
+            logging.warning(f"({self.name}): Token limit exceeded ({total_tokens} tokens). Summarizing messages.")
+            # Hívj meg egy összefoglaló függvényt, hogy csökkentsd a tokenek számát
+            summarized_message = await self.summarize_data_with_llm(messages)
+            self.memory.reset_short_term()
+            self.memory.add_to_short_term(self.system_message, LOW_PRIORITY)
+            self.memory.add_to_short_term(summarized_message, priority=MEDIUM_PRIORITY)
+            messages = self.memory.get_short_term_messages()
+            total_tokens = self.count_tokens(messages, self.encoding)
+            logging.info(f"({self.name}): Token count after summarization: {total_tokens}")
+
         try:
             completion = await asyncio.to_thread(
                 self.client.chat.completions.create,

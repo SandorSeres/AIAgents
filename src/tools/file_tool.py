@@ -168,7 +168,7 @@ class AppendToFileTool:
             file_path = os.path.join(directory, filename)
             # Append the content to the file
             with open(file_path, 'a') as file:
-                file.write(txt + '\n')
+                file.write('--------------\n'+ txt + '\n')
             return f"Appended to file: {file_path}", True
         except Exception as e:
             return f"An error occurred: {str(e)}", False

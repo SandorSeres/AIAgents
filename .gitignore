@@ -5,8 +5,9 @@ interviews
 memories
 post.md
 *.jpg
+*.pyc
 
-
+content.md
 config/kognitiv.yaml
 config/fb_post.yaml
 config/architect.yaml
