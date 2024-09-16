@@ -76,7 +76,6 @@ class State:
     Attributes:
         agents (dict): A dictionary mapping agent names to their instances for the current session.
         task_queue (asyncio.Queue): A queue to manage tasks assigned to the agents.
-        user_to_agent (dict): Maps user IDs to the agents they interact with.
         started (bool): Indicates whether the session has started.
         global_channel (str): The global communication channel for the session.
         all_agents (dict): All available agents for the session.
@@ -97,7 +96,6 @@ class State:
     def __init__(self):
         self.agents = {}
         self.task_queue = asyncio.Queue()
-        self.user_to_agent = {}
         self.started = False  # Each user gets their own "started" state
         self.global_channel = None
         self.all_agents = {}
@@ -243,7 +241,6 @@ async def create_system_snapshot(state):
             "timestamp": datetime.now().isoformat(),
             "agents_state": agents_state,
             "current_tasks": [],  # Placeholder, as we cannot access queue items directly
-            "user_to_agent": state.user_to_agent,
             "interaction": state.interaction
         }
 
@@ -469,21 +466,9 @@ async def send_task_to_human_agent(state, assistant_name, msg):
         assistant_name (str): The name of the human agent to whom the task is assigned.
         msg (str): The message or task details to be sent to the human agent.
     """
-    # Send the task to the appropriate client's message queue
-    for user_id, agent in state.user_to_agent.items():
-        if agent == assistant_name:
-            target_state = session_states.get(user_id)
-            if target_state and target_state.websocket:
-                await target_state.message_queue.put(f"Task assigned to {assistant_name}: {msg}")
-                logging.info(f"Task sent to {assistant_name}: {msg}")
-                return
-            else:
-                logging.error(f"No WebSocket connection found for {assistant_name} (user_id: {user_id})")
-                await send_response(state.global_channel, f"No WebSocket connection found for {assistant_name}")
-                return
-
-    logging.error(f"No user associated with assistant_name: {assistant_name}")
-    await send_response(state.global_channel, f"No user associated with assistant_name: {assistant_name}")
+    if state and state.message_queue:
+        await state.message_queue.put(msg)
+        return
 
 # Send response through WebSocket
 async def send_response(channel: str, message: str):
@@ -659,6 +644,6 @@ if __name__ == "__main__":
     setup_logging()
     try:
         import uvicorn
-        uvicorn.run(app, host="0.0.0.0", port=8081)
+        uvicorn.run(app, host="0.0.0.0", port=8080)
     except Exception as e:
         logging.error(f"Error in main execution: {e}", exc_info=True)

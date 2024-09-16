@@ -2,16 +2,21 @@ console.log("JavaScript file loaded");
 
 const userId = "cli_user_" + Math.random().toString(36).substring(2, 15); // Egyedi user_id generálása
 
-const host = window.location.hostname;
-
 function createWebSocket() {
-    const ws = new WebSocket(`ws://${host}:8081/ws/${userId}`);
 
-    ws.onopen = function(event) {
+    const protocol = window.location.protocol === "https:" ? "wss://" : "ws://";
+    const host = window.location.hostname;
+    const port = protocol === "ws://" ? ":8080" : "";  // Csak a ws:// kapcsolatnál adj meg portot
+
+    const ws = new WebSocket(`${protocol}${host}${port}/ws/${userId}`);
+    // const protocol = window.location.protocol === "https:" ? "wss://" : "ws://";
+    // const ws = new WebSocket(`${protocol}${host}:8080/ws/${userId}`);
+    // console.log(`${protocol}${host}:8080/ws/${userId}`)
+    ws.onopen = function (event) {
         console.log("WebSocket connection established", event);
     };
 
-    ws.onmessage = function(event) {
+    ws.onmessage = function (event) {
         const message = event.data;
 
         // Szűrjük ki a "ping" üzeneteket
@@ -24,11 +29,11 @@ function createWebSocket() {
         addMessageToChatbox("agent", message);
     };
 
-    ws.onerror = function(event) {
+    ws.onerror = function (event) {
         console.error("WebSocket error observed:", event);
     };
 
-    ws.onclose = function(event) {
+    ws.onclose = function (event) {
         console.log("WebSocket connection closed", event);
 
         // Próbálj újracsatlakozni 1 másodperc múlva
@@ -93,6 +98,6 @@ function printChat() {
 }
 
 // Fókusz az input mezőre az oldal betöltésekor
-window.onload = function() {
+window.onload = function () {
     document.getElementById("user-input").focus();
 };
