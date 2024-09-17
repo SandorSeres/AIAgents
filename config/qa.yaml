@@ -47,7 +47,7 @@ agents:
         "Observation": "<RESULT_OF_ASSISTANT'S_WORK>"
       }
 
-      Continue processing until The HumanAgent nor saying <DONE>. Then respond with <CAMEL_TASK_DONE>.
+      Continue processing until The HumanAgent not saying <DONE>. Then respond with <CAMEL_TASK_DONE>.
       When responding with your Final Answer, Be polite and say obly goodby till next time.
 
   ResearchAssistant:

@@ -94,6 +94,7 @@ class State:
     """
 
     def __init__(self):
+        self.stop = False
         self.agents = {}
         self.task_queue = asyncio.Queue()
         self.started = False  # Each user gets their own "started" state
@@ -162,6 +163,7 @@ def get_or_create_user_state(user_id):
     if user_id not in session_states:
         session_states[user_id] = State()
     return session_states[user_id]
+
 
 @app.websocket("/ws/{user_id}")
 async def websocket_endpoint(websocket: WebSocket, user_id: str):
@@ -254,6 +256,7 @@ async def create_system_snapshot(state):
         logging.error(f"Error while creating system snapshot: {e}", exc_info=True)
         return None
 
+
 # Main task execution function (orchestration layer)
 async def execute_tasks(state, step_name):
     """
@@ -314,7 +317,7 @@ async def execute_tasks(state, step_name):
     if not state.conversation_history:
         state.conversation_history = []
 
-    while n < chat_turn_limit:
+    while n < chat_turn_limit and state.stop == False:
         n += 1
         logging.info(f"Starting chat turn {n}")
         retry = 0
@@ -427,6 +430,14 @@ async def execute_tasks(state, step_name):
 
     for key, agent in state.agents.items():
         await agent.end()
+
+    # Delete state from session_states
+    for key, value in session_states.items():
+        if value == state:
+            async with global_lock:
+                del session_states[key]
+            break
+
 
 async def wait_for_human_response(state, assistant_name):
     """
@@ -565,6 +576,9 @@ async def cli_events(request: CLIRequest):
         else:
             await send_response(user_id, "Configuration is already in progress or set.")
             return JSONResponse({"message": "Configuration already in progress or set."}, status_code=200)
+    if message == "stop":
+        state.stop = True
+        return JSONResponse({"message": "User pressed stop."}, status_code=200)
 
     if state.config_request:
         # Handle configuration selection
