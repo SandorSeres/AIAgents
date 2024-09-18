@@ -12,6 +12,7 @@ import requests
 from tenacity import retry, stop_after_attempt, wait_exponential, retry_if_exception_type
 from dotenv import load_dotenv
 import logging
+import os
 
 # Load environment variables from the .env file
 load_dotenv()
@@ -100,7 +101,11 @@ class ImageGenerationTool:
         """
         response = requests.get(url)
         logging.info(f"Downloading image from {url} to {path}")
+
         if response.status_code == 200:
+            directory = os.path.dirname(path)
+            if not os.path.exists(directory):
+                os.makedirs(directory)
             with open(path, "wb") as file:
                 file.write(response.content)
             return "Image downloaded successfully.", True

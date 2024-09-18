@@ -94,6 +94,7 @@ class State:
     """
 
     def __init__(self):
+        self.user_id = None
         self.stop = False
         self.agents = {}
         self.task_queue = asyncio.Queue()
@@ -130,6 +131,7 @@ def initialize_agents(state):
 
     # Setting variables
     state.variables = config.get('variables', {})
+    state.variables["inputs"]["session_id"] = state.user_id 
     state.interaction = config.get('interaction', {})
 
     # Creating agents
@@ -161,7 +163,9 @@ def get_or_create_user_state(user_id):
         State: The state object associated with the user.
     """
     if user_id not in session_states:
-        session_states[user_id] = State()
+        s = State()
+        s.user_id = user_id
+        session_states[user_id] = s
     return session_states[user_id]
 
 
@@ -180,9 +184,30 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str):
 
     try:
         while True:
-            data = await websocket.receive_text()
-            logging.info(f"Message received from {user_id}: {data}")
-            # Process incoming messages if needed
+            # Create a task to receive data and another for the keep-alive ping
+            data_task = asyncio.create_task(websocket.receive_text())
+            keepalive_task = asyncio.create_task(asyncio.sleep(30))  # Keep-alive timer
+
+            # Wait for one of the tasks to complete
+            done, pending = await asyncio.wait(
+                [data_task, keepalive_task],
+                return_when=asyncio.FIRST_COMPLETED
+            )
+
+            # If data is received, process it
+            if data_task in done:
+                data = data_task.result()
+                logging.info(f"Message received from {user_id}: {data}")
+                # Process incoming message if needed
+            else:
+                # Send keep-alive ping if no data received within the interval
+                logging.info(f"Sending keep-alive ping to user: {user_id}")
+                await websocket.send_text("ping")
+            
+            # Cancel the pending task(s)
+            for task in pending:
+                task.cancel()
+
     except WebSocketDisconnect:
         logging.info(f"WebSocket connection closed for user: {user_id}")
         async with global_lock:
@@ -196,6 +221,8 @@ async def websocket_endpoint(websocket: WebSocket, user_id: str):
             if user_id in ws_clients:
                 del ws_clients[user_id]
         state.websocket = None
+
+
 
 async def client_sender(state):
     """
@@ -339,6 +366,7 @@ async def execute_tasks(state, step_name):
                 if "CAMEL_TASK_DONE" in manager_output:
                     logging.info("Task done!")
                     state.started = False
+                    state.stop == True
                     break
 
                 parsed_instruction = parse_user_instruction(manager_output)
@@ -424,9 +452,13 @@ async def execute_tasks(state, step_name):
     logging.info(f"Finished chat turn {n}")
     if not state.started:
         final = await chat_manager.step({'role': 'user', 'content': """Provide your Final Answer based on your system prompt."""})
-        with open('./post.md', "w") as file:
+        fname = f'./{state.variables["inputs"]["session_id"]}/post.md'
+        directory = os.path.dirname(fname)
+        if not os.path.exists(directory):
+            os.makedirs(directory)
+        with open(fname, "w") as file:
             print(final, file=file)
-        await send_response(state.global_channel, final)
+        # await send_response(state.global_channel, final)
 
     for key, agent in state.agents.items():
         await agent.end()

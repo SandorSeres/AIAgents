@@ -3,39 +3,33 @@ version: '1.2'
 variables:
   project_name: 'Complex Multi-agent Task Execution for long documentation'
   inputs:
-    topic: |
-      Provide a comprehensive analysis as part of a final thesis on How to use multi agent AI for finding kognitiv bias in interview transcipt and CV in the HR process.
-      Use an engaging, conversational tone suitable for a university class."
     language: Hungarian
     minimum_word_count: 800
-    file: ./content.md
+    content_format: patent description
     roles:
-      - {"ResearchAssistant": "Responsible for conducting research and gathering content from the internet."}
-      - {"ContentStructuringAssistant": "Responsible for organizing the collected information and creating a table of contents."}
-      - {"WritingAssistant": "Responsible for writing each chapter of the article step by step."}
+      - {"ResearchAssistant": "Responsible for conducting research and gathering content from the internet for the given topic."}
+      - {"ContentStructuringAssistant": "Responsible for organizing the collected information and creating a table of contents as part of {content_format} ."}
+      - {"WritingAssistant": "Responsible for writing each chapter of the topic in as part of {content_format} step by step."}
  
   steps:
     Write a detailed document:
-      participants: ["ResearchAssistant", "ContentStructuringAssistant", "WritingAssistant"]
-      objective: "Create a detailed article {topic}, complete with research, structuring, writing."
-      output: "Final article stored in the {file} file."
+      participants: ["HumanAssistant", "ResearchAssistant", "ContentStructuringAssistant", "WritingAssistant"]
+      objective: "Create a detailed {content_format} for the topic complete with research, structuring, writing."
+      output: "Final content stored in the {file} file."
 
 agents:
   ChatManager:
     type: "CAMELAgent"
     role_name: "Project Coordinator"
-    role_description: "Manages the overall process, assigns tasks to agents, and ensures the article is completed according to the requirements."
+    role_description: "Manages the overall process, assigns tasks to agents, and ensures the full {content_format} is completed according to the requirements."
     llm: "openai"
     system_prompt: |
-      Your role is to oversee the full process of creating an in-depth article.
+      Your role is to oversee the full process of creating an in-depth content.
       You will coordinate between research, structuring, writing sections.
-      - Begin by assigning research tasks to the ResearchAssistant.
-      - Once the research is completed, assign the ContentStructuringAssistant to create a detailed table of contents based on the research.
-      - The WritingAssistant will then write **one section at a time of the article according to the generated table of contents**. Ensure that the content exactly follows the structured sections and subsections.
-      - Continue iterating through each section with WritingAssistant until the full article is completed, ensuring it meets the {minimum_word_count} word minimum requirement.
-      - Important: All the time add to the 'Action input' that the ContentStructuringAssistant and the WritingAssistant must save all of its output in the {file} file.
-      - Important: All the time add to the 'Action input' that the solution should be in {language} language!
-      - Important: All the time add to the 'Action input' that the created section must meets the {minimum_word_count} word minimum requirement.!
+      - Begin by asking  HumanAssistant to define the topic for the {content_format}, then based on this assign research tasks to the ResearchAssistant.
+      - Once the research is completed, assign the ContentStructuringAssistant to create a detailed table of contents for vthe {content_format} based on the research.
+      - The WritingAssistant will then write **one section at a time of the content according to the generated table of contents**. Ensure that the content exactly follows the structured sections and subsections.
+      - Continue iterating through each section with WritingAssistant until the full content is completed, ensuring it meets the {minimum_word_count} word minimum requirement.
       - When all sections are written and saved you must then return with <CAMEL_TASK_DONE>. 
       
       You must instruct the assistants based on their expertise and your needs to complete the task ONLY in the following format:
@@ -48,19 +42,26 @@ agents:
         "Observation": "<RESULT_OF_ASSISTANT'S_WORK>"
       }
       Important: The "Action field all the time contains the name of the specific <ASSISTANT> you delegate the task"
+      Important: All the time add to the 'Action input' that the ContentStructuringAssistant and the WritingAssistant must save all of its output in the "./{session_id}/content.md" file.
+      Important: All the time add to the 'Action input' that the solution should be in {language} language!
+      Important: All the time add to the 'Action input' that the created section must meets the {minimum_word_count} word minimum requirement.!
+      Important: All the time add to the 'Action input' the original topic defined by the HumanAssistant!
     tools: 
       pre-processing:
         - ReadFileTool
 
- 
+  HumanAssistant:
+    type: "HumanAgent"
+    role_name: "Human Assistant"
+    role_description: "Assistant who ask a question what will be used as a topic in the workflow"
 
   ResearchAssistant:
     type: "CAMELAgent"
     role_name: "Research Assistant"
-    role_description: "Conducts research and gathers up-to-date information from the internet based on the given topic."
+    role_description: "The goal is to create {content_format} on the given topic, conducts research and gathers up-to-date information from the internet."
     llm: "openai"
     system_prompt: |
-      Your task is to assist with gathering accurate and up-to-date information for the {topic} provided by the ChatManager.
+      Your task is to assist with gathering accurate and up-to-date information for the topic provided by the ChatManager.
       You must perform thorough research on the internet and provide detailed responses to the instructions given.
       Always prioritize reliable and credible sources.
       Make sure the information is relevant.
@@ -80,11 +81,11 @@ agents:
   ContentStructuringAssistant:
     type: "CAMELAgent"
     role_name: "Content Structuring Assistant"
-    role_description: "Responsible for organizing the research and creating a logical table of contents and store it in {file} file ."
+    role_description: "Responsible for organizing the research and creating a logical table of contents for a {content_format} and store it in {file} file ."
     llm: "openai"
     system_prompt: |
       Your task is to take the research gathered and organize it into a clear and logical structure.
-      Create a table of contents that reflects the key sections and subsections of the article.
+      Create a table of contents that reflects the key sections and subsections of the {content_format}.
       Unless I say the task is completed, you should always start with:
 
       Solution: <YOUR_SOLUTION>
@@ -97,13 +98,13 @@ agents:
   WritingAssistant:
     type: "CAMELAgent"
     role_name: "Writing Assistant"
-    role_description: "Writes each chapter of the article based on the structured content and store it in {file} file ."
+    role_description: "Writes each chapter of the {content_format} based on the structured content and store it in {file} file ."
     llm: "openai"
     system_prompt: |
-      Your task is to write **the full content** of each section of the article based on the structured content provided by the ContentStructuringAssistant.
+      Your task is to write **the full content** of each section of the {content_format} based on the structured content provided by the ContentStructuringAssistant.
       Ensure that the content exactly follows the structured table of contents, and write each section with sufficient depth, detail, and clarity. No summaries—only full content!
       Extend your information on the section, by using your tool to search more relevant information on the internet.
-      After each section is completed, append your solution in the given file 
+      Important: After each section is completed, append your complett, full solution as it has generated in the given file using your tool. No summarise!
 
       The content should match the table of contents exactly and cover all topics and subsections listed.
 
