@@ -19,22 +19,38 @@ from tools.image_generation import ImageGenerationTool
 from tools.file_tool import *
 from tools.dummy_tool import DummyTool
 from tools.git_tool import *
+from tools.microsoft_news_tool import *
 from tools.execute_tool import *
 from tools.researchgate_tool import *
 from typing import List
 from memory import Memory
 
+import logging
+from logging.handlers import RotatingFileHandler
+
 def setup_logging():
     """
-    Sets up the logging configuration for the application. Logs are written to both the console and a file named 'app.log'.
-    The logging format includes timestamps, log level, logger name, message, and source file with line number.
+    Beállítja az alkalmazás naplózási konfigurációját. A naplók a konzolra és egy forgó fájlba íródnak.
+    A formátum tartalmazza az időbélyeget, a napló szintjét, a logger nevét, az üzenetet, valamint a forrásfájlt és a sor számát.
+    Legfeljebb 10 naplófájlt tart meg, egyenként maximum 5 MB méretben.
     """
+    # Forgó fájlkezelő létrehozása
+    rotating_handler = RotatingFileHandler(
+        "./log/app.log",
+        mode='a',
+        maxBytes=5*1024*1024,  # 5 MB
+        backupCount=10,
+        encoding='utf-8',
+        delay=0
+    )
+
+    # Naplózási konfiguráció beállítása
     logging.basicConfig(
         level=logging.INFO,
         format='%(asctime)s - %(name)s - %(levelname)s - %(message)s - %(filename)s:%(lineno)d',
         handlers=[
-            logging.StreamHandler(),  # Writes to console
-            logging.FileHandler("app.log", mode='a', encoding='utf-8')  # Writes to file
+            logging.StreamHandler(),  # Konzolra írás
+            rotating_handler          # Forgó fájlba írás
         ]
     )
 

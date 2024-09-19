@@ -25,6 +25,7 @@ class Memory:
         """
         self.short_term_memory = []
         self.long_term_memory = []
+        self.tool_old_history = []
         self.tool_history = []
         self.name = agent_name
         self.memory_file = f"./memories/{agent_name}_memory.json"
@@ -117,7 +118,9 @@ class Memory:
             with open(self.memory_file, "r") as file:
                 data = json.load(file)
                 self.long_term_memory = data.get('long_term_memory', [])
-                self.tool_history = data.get('tool_history', [])
+                #  nem kell a sessionhoz a régi tool használat
+                self.tool_old_history = data.get('tool_history', [])
+            self.tool_history = []
             logging.info(f"Memory loaded successfully from {self.memory_file}")
         except FileNotFoundError:
             logging.warning(f"No previous memory file found for {self.memory_file}, starting fresh.")
@@ -137,7 +140,7 @@ class Memory:
         """
         data = {
             "long_term_memory": self.long_term_memory,
-            "tool_history": self.tool_history
+            "tool_history": self.tool_old_history + self.tool_history
         }
         try:
             # Ellenőrizze a data tartalmát és szűrje ki a nem sorozható objektumokat

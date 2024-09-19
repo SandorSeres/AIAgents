@@ -9,6 +9,11 @@ License: [Creative Commons Zero v1.0 Universal]
 
 import os
 
+def check_path(path):
+    if "/path/to/directory" in path:
+        return False
+    return True
+
 class ReadFileTool:
     """
     Class Name: ReadFileTool
@@ -83,8 +88,8 @@ class SaveToFileTool:
 
     name: str = "SaveToFileTool"
     description: str = "A tool to save generated content to a specified directory with given filenames."
-    parameters: list = ["txt", "filename", "directory"]
-
+    # parameters: list = ["txt", "filename", "directory"]
+    parameters: str = "Mandatory: txt: the test to append to the file, filename: Name of the file, directory: directory to the file defined in the reqoest"
     def _run(self, txt: str, filename: str, directory: str) -> tuple:
         """
         Saves the provided content to a specified file within a given directory.
@@ -162,6 +167,8 @@ class AppendToFileTool:
             - The content is appended to the file if it exists; otherwise, it creates a new file and writes the content to it.
         """
         try:
+            if not check_path(directory) :
+                return "'/path/to/directory' is typically invented directory and not the real what was requested. try again!" , False
             # Ensure the directory exists
             os.makedirs(directory, exist_ok=True)
             # Define the file path

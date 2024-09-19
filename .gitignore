@@ -1,11 +1,11 @@
 .env
-app.log
+log
 camel_cost.csv
 interviews
 memories
 post.md
-*.jpg
-*.pyc
+.jpg
+.pyc
 
 content.md
 config/kognitiv.yaml

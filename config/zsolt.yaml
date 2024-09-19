@@ -11,6 +11,7 @@ variables:
       Create a detailed analysis for a normal newspaper about 'Septic infection'. Also add information about Austrria. The content should be minimum 1500 word!
 
       image_style: [
+        "Modern flat design infographics with geometric shapes and icons",
         "Secessionist style, inspired by Gustav Klimt, characterized by ornamental patterns, rich colors, and abstract shapes."
         "Modern impressionism style, approching Z-generation,characterized by dynamic brushstrokes and vibrant color combinations."
         "Abstract, inspired by Kandinsky style image based on the provided content.",

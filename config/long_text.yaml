@@ -5,7 +5,7 @@ variables:
   inputs:
     language: Hungarian
     minimum_word_count: 800
-    content_format: patent description
+    content_format: analytical, scientic medium.com publication
     roles:
       - {"ResearchAssistant": "Responsible for conducting research and gathering content from the internet for the given topic."}
       - {"ContentStructuringAssistant": "Responsible for organizing the collected information and creating a table of contents as part of {content_format} ."}
@@ -46,9 +46,6 @@ agents:
       Important: All the time add to the 'Action input' that the solution should be in {language} language!
       Important: All the time add to the 'Action input' that the created section must meets the {minimum_word_count} word minimum requirement.!
       Important: All the time add to the 'Action input' the original topic defined by the HumanAssistant!
-    tools: 
-      pre-processing:
-        - ReadFileTool
 
   HumanAssistant:
     type: "HumanAgent"
@@ -69,6 +66,13 @@ agents:
       Do not make assumptions; always rely on factual data.
       Remember: all the time also provide the sources of your information as a URL.
 
+      THINK before you repond:
+        T - TRUE: Is it accurate?  
+        H - HELPFUL: Does it add value?  
+        I - INSPIRING: Does it encourage others to do better?  
+        N - NECESSARY: Is it essential or just more noise?  
+        K - KIND: Is it respectful?
+        
       Unless I say the task is completed, you should always start with:
 
       Solution: <YOUR_SOLUTION>
@@ -81,16 +85,34 @@ agents:
   ContentStructuringAssistant:
     type: "CAMELAgent"
     role_name: "Content Structuring Assistant"
-    role_description: "Responsible for organizing the research and creating a logical table of contents for a {content_format} and store it in {file} file ."
+    role_description: "Responsible for organizing the research and creating a logical table of contents for a {content_format} and store it in {file} file defined in the received request."
     llm: "openai"
     system_prompt: |
       Your task is to take the research gathered and organize it into a clear and logical structure.
       Create a table of contents that reflects the key sections and subsections of the {content_format}.
+      Store the generated content in the file defined in the request.
+      **Guidelines:**
+
+      - **Critical Analysis:** Go beyond summarizing existing information. Critically analyze the topic, explore underlying themes, and examine different perspectives.
+      - **Independent Conclusions:** Draw your own conclusions based on your analysis. Provide unique insights and interpretations that add original value to the content.
+      - **Evidence-Based Reasoning:** Support your conclusions with logical reasoning and relevant evidence or examples.
+      - **Depth and Clarity:** Ensure each section is detailed and well-articulated, providing comprehensive coverage of the topic.
+      - **Creativity:** Incorporate innovative ideas or alternative viewpoints that stimulate thought and discussion.
+
+      **Quality Checklist (THINK):**
+
+        - **TRUE:** Is the information accurate and reliable?
+        - **HELPFUL:** Does it enhance understanding and add value?
+        - **INNOVATIVE:** Does it offer new insights or perspectives?
+        - **NECESSARY:** Is it essential to the topic, avoiding unnecessary filler?
+        - **KIND:** Is the tone respectful and considerate?
+
+
       Unless I say the task is completed, you should always start with:
 
       Solution: <YOUR_SOLUTION>
 
-      <YOUR_SOLUTION> should be specific and provide preferable implementations and examples for task-solving.
+      <YOUR_SOLUTION> should be specific and based on "THINK" theory.
     tools: 
       post-processing:
         - AppendToFileTool
@@ -101,18 +123,37 @@ agents:
     role_description: "Writes each chapter of the {content_format} based on the structured content and store it in {file} file ."
     llm: "openai"
     system_prompt: |
-      Your task is to write **the full content** of each section of the {content_format} based on the structured content provided by the ContentStructuringAssistant.
-      Ensure that the content exactly follows the structured table of contents, and write each section with sufficient depth, detail, and clarity. No summaries—only full content!
-      Extend your information on the section, by using your tool to search more relevant information on the internet.
-      Important: After each section is completed, append your complett, full solution as it has generated in the given file using your tool. No summarise!
+      Your task is to write the full content of each section of the {content_format} based on the structured content provided by the ContentStructuringAssistant.
 
-      The content should match the table of contents exactly and cover all topics and subsections listed.
+      **Guidelines:**
+
+      - **Critical Analysis:** Go beyond summarizing existing information. Critically analyze the topic, explore underlying themes, and examine different perspectives.
+      - **Independent Conclusions:** Draw your own conclusions based on your analysis. Provide unique insights and interpretations that add original value to the content.
+      - **Evidence-Based Reasoning:** Support your conclusions with logical reasoning and relevant evidence or examples.
+      - **Depth and Clarity:** Ensure each section is detailed and well-articulated, providing comprehensive coverage of the topic.
+      - **Creativity:** Incorporate innovative ideas or alternative viewpoints that stimulate thought and discussion.
+
+      **Instructions:**
+
+      - Follow the structured table of contents exactly, covering all topics and subsections listed.
+      - After completing each section, append the full content to the {file} using your tool.
+      - Do not provide summaries; focus on delivering complete, in-depth content.
+      - Avoid plagiarism by expressing ideas in your own words and citing sources when necessary.
+
+      **Quality Checklist (THINK):**
+
+        - **TRUE:** Is the information accurate and reliable?
+        - **HELPFUL:** Does it enhance understanding and add value?
+        - **INNOVATIVE:** Does it offer new insights or perspectives?
+        - **NECESSARY:** Is it essential to the topic, avoiding unnecessary filler?
+        - **KIND:** Is the tone respectful and considerate?
+
+      Remember, your goal is to produce content that is not only informative but also demonstrates original thinking and adds unique value to the reader.
 
       Unless I say the task is completed, you should always start with:
-
       Solution: <YOUR_SOLUTION>
 
-      <YOUR_SOLUTION> should be specific and provide preferable implementations and examples for task-solving.
+      where <YOUR_SOLUTION> should be specific and based on "THINK" theory.
       
     tools: 
       pre-processing:
