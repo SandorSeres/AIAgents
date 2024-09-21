@@ -488,10 +488,9 @@ Here are the available tools:
 Based on the following conversation, decide which tool to use and with what parameters:
 
 Conversation:
-{messages[-1]['content']}
+{messages}
 
-Previous tool history:
-{" ".join([str(message['content']) for message in self.memory.get_tool_history()])}
+**Quality Check**: Is the extracted information accurate and reliable?
 
 Reply with the tool name and parameters to use in JSON format. If no tool is needed, reply with "No tool needed". 
 
@@ -607,81 +606,6 @@ Correct the JSON and reply with a valid JSON format.
             logging.warning(f"JSON extraction error: text: {text}")
             return "{}"
 
-    @retry(stop=stop_after_attempt(3), wait=wait_exponential(min=1, max=10), retry=retry_if_exception_type(Exception))
-    async def use_tool(self, messages, tools):
-        """
-        Executes a tool based on the decision made from the conversation context.
-
-        Parameters:
-            messages (list): A list of messages representing the conversation history.
-            tools (list): A list of available tools.
-
-        Returns:
-            tuple: A tuple containing the follow-up message and a boolean indicating task completion.
-        """
-        if not tools:
-            logging.info(f"({self.name}): No tools available.")
-            return None, True
-
-        tool_decision = await self.get_tool(messages, tools)
-        logging.info(f"({self.name}): Tool decision: {tool_decision}")
-
-        if tool_decision is None or (isinstance(tool_decision, str) and "no tool needed" in tool_decision.strip().lower()):
-            return None, True
-
-        try:
-            tool_decision = json.loads(self.extract_json_string(tool_decision))
-            tool_name = tool_decision['tool']
-            params = tool_decision.get('parameters', {})
-
-            for tool in tools:
-                if tool.name == tool_name:
-                    try:
-                        if isinstance(params, dict):
-                            result, task_completed = tool._run(**params)
-                        else:
-                            result, task_completed = tool._run(params)
-
-                        if task_completed:
-                            follow_up_message = {'role': 'user', 'content': str(result)}
-                            return follow_up_message, task_completed
-
-                        if tool.name == "RunPythonTool":
-                            for attempt in range(3):
-                                error_message = (
-                                    "I am providing the following Python code and error message:\n\n"
-                                    "Code:\n"
-                                    f"{params}\n\n"
-                                    "Error Message:\n"
-                                    f"{result}\n\n"
-                                    "Please suggest a fix for the code to resolve the error."
-                                )
-                                logging.warning(f"({self.name}): {error_message}")
-                                
-                                history_context = "\n\n".join([entry['content'] for entry in self.memory.get_tool_history()])
-                                detailed_error_message = f"{error_message}\n\nPrevious Attempts:\n{history_context}"
-                                self.update_tool_history({'role': 'user', 'content': detailed_error_message})
-
-                                fix_suggestion = await self.query([{'role': 'user', 'content': detailed_error_message}])
-                                if "Exception" in fix_suggestion:
-                                    logging.warning(f"({self.name}): Retrying due to exception in fix suggestion: {fix_suggestion}")
-                                    await asyncio.sleep(5)
-                                else:
-                                    result = await self.query([{'role': 'system', 'content': fix_suggestion}])
-                                    logging.info(f"({self.name}): Tool fix suggestion applied: {result}")
-                                    break
-                            else:
-                                logging.error(f"({self.name}): Failed to fix tool execution after multiple attempts.")
-                                return {"error": "Failed to fix the tool execution."}, True
-                    except Exception as e:
-                        logging.error(f"({self.name}): Tool execution error: {e}", exc_info=True)
-                        return {"error": "Tool execution failed."}, True
-        except Exception as e:
-            logging.error(f"({self.name}): Tool decision processing error: {e}", exc_info=True)
-            return {"error": "Tool decision processing failed."}, True
-
-        return None, True
-
     async def react_prompt(self, input_message):
         """
         Processes an input message, applies pre-processing tools, queries the LLM, and applies post-processing tools.
@@ -692,18 +616,23 @@ Correct the JSON and reply with a valid JSON format.
         Returns:
             str or dict: The output message after processing, or an error message.
         """
+        logging.info(f"({self.name}):{input_message}")
         await self.update_messages(input_message, LOW_PRIORITY)
 
         output_message = None
 
+        # Pre-processing
         if self.pre_processing_tools:
             flag = False
             n = 0
-            while not flag or n > 4:
-                tool_decision = await self.get_tool(self.memory.get_short_term_messages(), self.pre_processing_tools)
+            while not flag and n < 4:  # Use 'and' to continue looping until 4 tries
+                n += 1  # Increment the attempt counter
+                tool_decision = await self.get_tool(input_message, self.pre_processing_tools)
+
                 if isinstance(tool_decision, str) and "no tool needed" in tool_decision.strip().lower():
                     tool_decision = None
                     flag = True
+                    continue  # Skip the rest of the loop if no tool is needed
 
                 if tool_decision:
                     tool_name = tool_decision.get('tool')
@@ -716,13 +645,14 @@ Correct the JSON and reply with a valid JSON format.
                                 if task_completed:
                                     self.update_tool_history({'role': 'user', 'content': tool_result})
                                     flag = True
+                                    await self.update_messages({'role': 'user', 'content': tool_result}, MEDIUM_PRIORITY)
+                                    logging.info(f"Tool result: {tool_result}")
                                     break
                             except Exception as e:
                                 logging.error(f"({self.name}): Error applying pre-processing tool {tool_name}: {e}", exc_info=True)
                                 return {"error": "Error applying pre-processing tool."}, True
-                    if tool_result :
-                        await self.update_messages({'role': 'user', 'content': tool_result}, MEDIUM_PRIORITY)
 
+        # Query the LLM
         output_message = await self.query(self.memory.get_short_term_messages())
 
         if asyncio.iscoroutine(output_message):
@@ -730,37 +660,36 @@ Correct the JSON and reply with a valid JSON format.
 
         await self.update_messages({'role': 'assistant', 'content': output_message}, HIGH_PRIORITY)
 
+        # Post-processing
         if self.post_processing_tools:
             flag = False
             n = 0
-            while not flag or n > 4:
-                tool_decision = await self.get_tool(self.memory.get_short_term_messages(), self.post_processing_tools)
+            while not flag and n < 4:  # Use 'and' to continue looping until 4 tries
+                n += 1  # Increment the attempt counter
+                tool_decision = await self.get_tool([ input_message, output_message], self.post_processing_tools)
+
                 if isinstance(tool_decision, str) and "no tool needed" in tool_decision.strip().lower():
-                    tool_decision = None
                     flag = True
+                    continue  # Skip the rest of the loop if no tool is needed
 
                 if tool_decision:
-                    try:
-                        tool_name = tool_decision.get('tool')
-                        params = tool_decision.get('parameters')
+                    tool_name = tool_decision.get('tool')
+                    params = tool_decision.get('parameters')
 
-                        for tool in self.post_processing_tools:
-                            if tool.name == tool_name:
-                                try:
-                                    tool_result, task_completed = tool._run(**params)
-                                    if task_completed:
-                                        self.update_tool_history({'role': 'user', 'content': tool_result})
-                                        output_message += tool_result
-                                        flag = True
-                                        break
-                                except Exception as e:
-                                    logging.error(f"({self.name}): Error applying post-processing tool {tool_name}: {e}", exc_info=True)
-                                    return {"error": "Error applying post-processing tool."}, True
-                    except Exception as e:
-                        logging.error(f"({self.name}): Tool decision processing error: {e}", exc_info=True)
-                        return {"error": "Tool decision processing failed."}, True
-                    await self.update_messages({'role': 'user', 'content': tool_result}, MEDIUM_PRIORITY)
- 
+                    for tool in self.post_processing_tools:
+                        if tool.name == tool_name:
+                            try:
+                                tool_result, task_completed = tool._run(**params)
+                                if task_completed:
+                                    self.update_tool_history({'role': 'user', 'content': tool_result})
+                                    output_message += tool_result  # Concatenate results
+                                    flag = True
+                                    await self.update_messages({'role': 'user', 'content': tool_result}, MEDIUM_PRIORITY)
+                                    break
+                            except Exception as e:
+                                logging.error(f"({self.name}): Error applying post-processing tool {tool_name}: {e}", exc_info=True)
+                                return {"error": "Error applying post-processing tool."}, True
+
         return output_message
                 
     async def step(self, input_message):

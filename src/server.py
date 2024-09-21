@@ -386,14 +386,15 @@ async def execute_tasks(state, step_name):
             break
 
         assistant_agent = state.agents[assistant_name]
+        # This is not needed if the research content stored in a file
+        # Conversation History: {state.conversation_history}\n
         assistant_msg = {
             'role': 'user',
             'content': f"""
                 Instruction: {parsed_instruction['Question']}\n
                 Thought: {parsed_instruction['Thought']}\n
                 Action Input: {parsed_instruction['Action Input']}\n
-                Conversation History: {state.conversation_history}\n
-                Input: {inputs}\n
+               Input: {inputs}\n
                 Previous response: {assistant_response}
             """
         }
