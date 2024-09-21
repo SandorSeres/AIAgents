@@ -43,9 +43,10 @@ agents:
         "Observation": "<RESULT_OF_ASSISTANT'S_WORK>"
       }
       Important: The "Action field all the time contains the name of the specific <ASSISTANT> you delegate the task"
-      Important: All the time add to the 'Action input' that the ResearchAssistant must save all of its output in the "./{session_id}/input.md" file.
-      Important: All the time add to the 'Action input' that the ContentStructuringAssistant and the WritingAssistant must load the research result from "./{session_id}/input.md" file and save all of its output in the "./{session_id}/content.md" file.
-      Important: All the time add to the 'Action input' that the solution should be in {language} language!
+      Important: All the time add to the 'Action input' that ResearchAssistant should all the time search in English even if the user question is in different language!
+      Important: All the time add to the 'Action input' that the ResearchAssistant must save all of its findings, output in the "./{session_id}" directory with a file name of "input.md" file.
+      Important: All the time add to the 'Action input' that the ContentStructuringAssistant and the WritingAssistant must load the research result from "./{session_id}" directory "input.md" file and save all of its output in the "./{session_id}" directory in a "content.md" file.
+      Important: All the time add to the 'Action input' that ContentStructuringAssistant and the WritingAssistant solution should be in {language} language!
       Important: All the time add to the 'Action input' that the created section must meets the {minimum_word_count} word minimum requirement.!
       Important: All the time add to the 'Action input' the original topic defined by the HumanAssistant!
 
@@ -61,20 +62,20 @@ agents:
     llm: "openai"
     system_prompt: |
       You are a researcher. Your task is to assist with gathering accurate and up-to-date information for the topic provided by the ChatManager.
+
       You must perform thorough research on the internet and provide the full content in responses to the instructions given.
       Always prioritize reliable and credible sources.
       Make sure the information is relevant.
-      You should respond with the full gathered information.
-      Do not make assumptions; always rely on factual data.
-      Remember: all the time also provide the sources of your information as a URL.
 
+      Once the information returned by the tool then do not modify the content of it!
+      Save the full returned information into the defined file.
+  
       Unless I say the task is completed, you should always start with:
-
       Solution: <YOUR_SOLUTION>
 
-      <YOUR_SOLUTION> should be the full content and contain all the valide source URL preferebly in json format.
+      <YOUR_SOLUTION> should be the full content provided by the tool .
 
-      Alvaise store <YOUR_SOLUTION> in the exact file defined in the incomming request!
+      Alvayse store <YOUR_SOLUTION> in the exact file defined in the incomming request!
     tools: 
       pre-processing:
         - SearchAndRetrieveTool

@@ -87,9 +87,8 @@ class SaveToFileTool:
     """
 
     name: str = "SaveToFileTool"
-    description: str = "A tool to save generated content to a specified directory with given filenames."
-    # parameters: list = ["txt", "filename", "directory"]
-    parameters: str = "Mandatory: txt: the test to append to the file, filename: Name of the file, directory: directory to the file defined in the reqoest"
+    description: str = "A tool to save the full generated content as it is to a specified directory with given filenames."
+    parameters: str = "Mandatory: txt: the full generated content to save to the file, filename: Name of the file, directory: directory to the file defined in the reqoest"
     def _run(self, txt: str, filename: str, directory: str) -> tuple:
         """
         Saves the provided content to a specified file within a given directory.
@@ -147,8 +146,8 @@ class AppendToFileTool:
     """
 
     name: str = "AppendToFileTool"
-    description: str = "A tool to append generated content to a specified file in a given directory."
-    parameters: list = ["txt", "filename", "directory"]
+    description: str = "A tool to append and save the full generated content as it is to a specified directory with given filenames."
+    parameters: str = "Mandatory: txt: the full generated content to append to the file, filename: Name of the file, directory: directory to the file defined in the reqoest"
 
     def _run(self, txt: str, filename: str, directory: str) -> tuple:
         """

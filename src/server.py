@@ -386,7 +386,7 @@ async def execute_tasks(state, step_name):
             break
 
         assistant_agent = state.agents[assistant_name]
-        # This is not needed if the research content stored in a file
+        # This is not needed if the research content stored in a file. Then all 
         # Conversation History: {state.conversation_history}\n
         assistant_msg = {
             'role': 'user',
@@ -462,8 +462,10 @@ async def execute_tasks(state, step_name):
         # await send_response(state.global_channel, final)
 
     for key, agent in state.agents.items():
-        await agent.end()
-
+        try:
+            await agent.end()
+        except:
+            pass
     # Delete state from session_states
     for key, value in session_states.items():
         if value == state:

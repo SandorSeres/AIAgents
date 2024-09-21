@@ -622,6 +622,7 @@ Correct the JSON and reply with a valid JSON format.
         output_message = None
 
         # Pre-processing
+        tool_result = None
         if self.pre_processing_tools:
             flag = False
             n = 0
@@ -651,7 +652,10 @@ Correct the JSON and reply with a valid JSON format.
                             except Exception as e:
                                 logging.error(f"({self.name}): Error applying pre-processing tool {tool_name}: {e}", exc_info=True)
                                 return {"error": "Error applying pre-processing tool."}, True
-
+                    else:
+                        logging.info(f"{tool.name} did not returned any indo, using modell internal knowledge.")
+                        await self.update_messages({'role': 'user', 'content': f"Because {tool.name} did not returned any information, now use modell internal knowledge."}, MEDIUM_PRIORITY)
+ 
         # Query the LLM
         output_message = await self.query(self.memory.get_short_term_messages())
 
