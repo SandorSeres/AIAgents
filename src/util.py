@@ -14,7 +14,7 @@ from datetime import datetime
 import yaml
 import logging
 import os
-from tools.search_tool import SearchAndRetrieveTool
+from tools.search_tool import *
 from tools.image_generation import ImageGenerationTool
 from tools.file_tool import *
 from tools.dummy_tool import DummyTool

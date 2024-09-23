@@ -5,7 +5,7 @@ variables:
   inputs:
     language: Hungarian
     minimum_word_count: 800
-    content_format: analytical, scientic medium.com publication
+    content_format: powerpoint presentation
     roles:
       - {"ResearchAssistant": "Responsible for conducting research and gathering content from the internet for the given topic."}
       - {"ContentStructuringAssistant": "Responsible for organizing the collected information and creating a table of contents as part of {content_format} ."}
@@ -63,13 +63,9 @@ agents:
     system_prompt: |
       You are a researcher. Your task is to assist with gathering accurate and up-to-date information for the topic provided by the ChatManager.
 
-      You must perform thorough research on the internet and provide the full content in responses to the instructions given.
+      You must perform thorough research on the internet and save it into the given directory and file.
       Always prioritize reliable and credible sources.
       Make sure the information is relevant.
-
-      Once the information returned by the tool then do not modify the content of it!
-      Save the full returned information into the defined file.
-  
       Unless I say the task is completed, you should always start with:
       Solution: <YOUR_SOLUTION>
 
@@ -77,10 +73,8 @@ agents:
 
       Alvayse store <YOUR_SOLUTION> in the exact file defined in the incomming request!
     tools: 
-      pre-processing:
-        - SearchAndRetrieveTool
       post-processing:
-        - SaveToFileTool
+        - SearchRetrieveAndSaveTool
 
   ContentStructuringAssistant:  
     type: "CAMELAgent"
@@ -126,7 +120,7 @@ agents:
     llm: "openai"
     system_prompt: |
       You are a very experienced content writer. Your task is to write the full content of each section of the {content_format} based on the structured content provided by the ContentStructuringAssistant.
-
+      Can draw yout  conclusion, but do not add summary at the end of each section. Add summmery at the last section of the document.
       **Guidelines**:
       **Critical Analysis**: Go beyond summarizing existing information. Critically analyze the topic, explore underlying themes, and examine different perspectives.
       **Independent Reasoning and Conclusions**: Utilize logical reasoning to draw your own conclusions based on your analysis. Provide unique insights and interpretations that add original value to the content.

@@ -15,7 +15,7 @@ import html2text
 from transformers import pipeline
 import numpy as np
 import logging
-
+from  tools.file_tool import *
 class BaseSearchTool:
     """
     Class Name: BaseSearchTool
@@ -235,3 +235,60 @@ class SearchAndRetrieveTool(BaseSearchTool):
         """
         return SearchAndRetrieveTool()
 
+class SearchRetrieveAndSaveTool(SearchAndRetrieveTool, SaveToFileTool):
+    """
+    Class Name: SearchRetrieveAndSaveTool
+    Description: This class combines the functionality of searching, retrieving content, and saving the content to a file.
+    
+    Attributes:
+        name (str): The name of the tool.
+        description (str): A brief description of what the tool does.
+        parameters (str): The parameters that can be passed to the tool, including query, filename, directory, and optional settings like country, language, and date range.
+    
+    Methods:
+        _run(query, directory, filename, url_file, country, language, geolocation, results_per_page, date_range):
+            Executes the search, retrieves the content, and saves the result to the specified file in the given directory.
+        
+        clone():
+            Returns a new instance of SearchRetrieveAndSaveTool with the same configuration.
+    """
+    name: str = "SearchRetrieveAndSaveTool"
+    description: str = "Searches the internet, retrieves content, and saves the result to a file in a specified directory."
+    parameters: str = "Mandatory: query, directory , filename, Optional: url_file, country, language, geolocation, results_per_page, date_range (e.g., 'w' for last week, 'm' for last month, 'y' for last year)"
+
+    def _run(self, query: str = None, directory: str = None, filename: str = None, url_file: Optional[str] = None, country: Optional[str] = None, language: Optional[str] = None, geolocation: Optional[str] = None, results_per_page: Optional[int] = 10, date_range: Optional[str] = None) -> tuple:
+        """
+        Executes the search, retrieves the content, and saves the result to the specified file in the given directory.
+
+        Parameters:
+            query (str): The search query.
+            directory (str): The directory where the file should be saved.
+            filename (str): The name of the file to save the content to.
+            url_file (Optional[str]): A file containing URLs to process instead of performing a search.
+            country (Optional[str]): A country code to limit search results to a specific country.
+            language (Optional[str]): A language code to limit search results to a specific language.
+            geolocation (Optional[str]): A geolocation parameter for more localized search results.
+            results_per_page (Optional[int]): Number of search results to return per page (default is 10).
+            date_range (Optional[str]): Limits the search results to a specific date range ('w' for last week, 'm' for last month, 'y' for last year).
+
+        Returns:
+            tuple: A tuple containing the file path or an error message if an exception occurs, along with a task_completed flag.
+        """
+        # Perform the search and retrieve content
+        search_results, task_completed = super()._run(query, url_file, country, language, geolocation, results_per_page, date_range)
+        
+        if task_completed:
+            # Save the retrieved content to a file
+            save_result, save_completed = SaveToFileTool()._run(txt=search_results, filename=filename, directory=directory)
+            return save_result, save_completed
+        else:
+            return "Search and retrieve process failed.", False
+
+    def clone(self):
+        """
+        Creates a clone of the SearchRetrieveAndSaveTool instance.
+
+        Returns:
+            SearchRetrieveAndSaveTool: A new instance of SearchRetrieveAndSaveTool.
+        """
+        return SearchRetrieveAndSaveTool()

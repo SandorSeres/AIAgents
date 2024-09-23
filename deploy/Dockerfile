@@ -7,6 +7,7 @@ WORKDIR /app
 # A szükséges Python csomagok telepítéséhez szükséges függőségek telepítése
 RUN apt-get update && apt-get install -y \
     gcc git \
+    && playwright install-deps \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
