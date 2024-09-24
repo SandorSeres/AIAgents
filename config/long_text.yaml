@@ -5,7 +5,7 @@ variables:
   inputs:
     language: Hungarian
     minimum_word_count: 800
-    content_format: powerpoint presentation
+    content_format: research paper
     roles:
       - {"ResearchAssistant": "Responsible for conducting research and gathering content from the internet for the given topic."}
       - {"ContentStructuringAssistant": "Responsible for organizing the collected information and creating a table of contents as part of {content_format} ."}
@@ -45,6 +45,7 @@ agents:
       Important: The "Action field all the time contains the name of the specific <ASSISTANT> you delegate the task"
       Important: All the time add to the 'Action input' that ResearchAssistant should all the time search in English even if the user question is in different language!
       Important: All the time add to the 'Action input' that the ResearchAssistant must save all of its findings, output in the "./{session_id}" directory with a file name of "input.md" file.
+      Important: All the time add to the 'Action input' for the WritingAssistant all the time provide the part from the table of content related to the given section.
       Important: All the time add to the 'Action input' that the ContentStructuringAssistant and the WritingAssistant must load the research result from "./{session_id}" directory "input.md" file and save all of its output in the "./{session_id}" directory in a "content.md" file.
       Important: All the time add to the 'Action input' that ContentStructuringAssistant and the WritingAssistant solution should be in {language} language!
       Important: All the time add to the 'Action input' that the created section must meets the {minimum_word_count} word minimum requirement.!
@@ -120,7 +121,8 @@ agents:
     llm: "openai"
     system_prompt: |
       You are a very experienced content writer. Your task is to write the full content of each section of the {content_format} based on the structured content provided by the ContentStructuringAssistant.
-      Can draw yout  conclusion, but do not add summary at the end of each section. Add summmery at the last section of the document.
+      Whenever the requested section is the reference section, put all the URL you used from the context.
+      Can draw your conclusion, but do not add summary at the end of each section. Add summmary at the section with that name of the document.
       **Guidelines**:
       **Critical Analysis**: Go beyond summarizing existing information. Critically analyze the topic, explore underlying themes, and examine different perspectives.
       **Independent Reasoning and Conclusions**: Utilize logical reasoning to draw your own conclusions based on your analysis. Provide unique insights and interpretations that add original value to the content.

@@ -8,13 +8,26 @@ from urllib.parse import urlparse, urlunparse
 def scrape_researchgate_articles(query: str):
     with sync_playwright() as p:
 
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:92.0) Gecko/20100101 Firefox/92.0',
+            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8',
+            'Accept-Language': 'en-US,en;q=0.5',
+            'Accept-Encoding': 'gzip, deflate, br',
+            'Connection': 'keep-alive',
+            'Upgrade-Insecure-Requests': '1',
+            'Sec-Fetch-Dest': 'document',
+            'Sec-Fetch-Mode': 'navigate',
+            'Sec-Fetch-Site': 'none',
+            'Sec-Fetch-User': '?1'
+        }
+
         browser = p.chromium.launch(headless=True)
-        context = browser.new_context(user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64)")
+        browser.new_page()
+        context = browser.new_context(java_script_enabled=True,extra_http_headers=headers)
         page = context.new_page()
 
         articles = []
         page_num = 1
-
         while True:
             print(f"Extracting Page: {page_num}")
             page.goto(f"https://www.researchgate.net/search/publication?q={query}&page={page_num}")
@@ -46,6 +59,10 @@ def scrape_researchgate_articles(query: str):
                     article_page.goto(article_url_no_query)
                     article_page.wait_for_load_state("networkidle")
                     time.sleep(2)  # Wait for potential dynamic content to load
+                    # try:
+                    #     article_page.click("text=Verify you are human")  # Keresheted a gombot más szövegek vagy attribútumok alapján is
+                    # except Exception as e:
+                    #     print("Nem sikerült a gombra kattintani:", e)
 
                     # Extract the page content
                     article_content = article_page.content()
@@ -88,6 +105,7 @@ def scrape_researchgate_articles(query: str):
                         if not abstract:
                             # Use Playwright to get the full page content
                             page_html = article_page.content()
+
                             soup = BeautifulSoup(page_html, 'html.parser')
 
                             # Attempt to find the main content area
