@@ -3,20 +3,19 @@ File Name: search_tool.py
 Description: This file contains the implementation of the SearchAndRetrieveTool class, which is used to perform Google searches, retrieve the content from URLs, and convert HTML content to Markdown format. It also includes a base class, BaseSearchTool, that provides common functionality for search operations.
 Author: [Sandor Seres (sseres@code.hu)]
 Date: 2024-08-31
-Version: 1.2
+Version: 1.0
 License: [Creative Commons Zero v1.0 Universal]
 """
 
 import requests
 from bs4 import BeautifulSoup
-from typing import List, Dict, Optional, Tuple
+from typing import List, Dict, Optional
 import urllib.parse
 import html2text
 from transformers import pipeline
 import numpy as np
 import logging
-from tools.file_tool import *
-
+from  tools.file_tool import *
 class BaseSearchTool:
     """
     Class Name: BaseSearchTool
@@ -33,12 +32,12 @@ class BaseSearchTool:
             Converts HTML content to Markdown format.
     """
 
-    def google_search(self, query: Optional[str] = None, url_file: Optional[str] = None, country: Optional[str] = None, language: Optional[str] = None, geolocation: Optional[str] = None, results_per_page: Optional[int] = 5, date_range: Optional[str] = None) -> List[Dict[str, str]]:
+    def google_search(self, query: List[str] = None, url_file: Optional[str] = None, country: Optional[str] = None, language: Optional[str] = None, geolocation: Optional[str] = None, results_per_page: Optional[int] = 5, date_range: Optional[str] = None) -> List[Dict[str, str]]:
         """
         Performs a Google search or loads URLs from a file, returning search results.
 
         Parameters:
-            query (Optional[str]): A search query to execute.
+            query (List[str]): A list of search queries to execute.
             url_file (Optional[str]): A file containing URLs to be loaded instead of performing a search.
             country (Optional[str]): A country code to limit search results to a specific country.
             language (Optional[str]): A language code to limit search results to a specific language.
@@ -66,10 +65,12 @@ class BaseSearchTool:
                 logging.error(f"Error reading url_file: {str(e)}")
                 return []
         elif query:
-            if not isinstance(query, str):
-                raise TypeError("Query must be a string")
-            
-            params = {"q": query}
+            if isinstance(query, str):
+                query = [query]
+            if not isinstance(query[0], str):
+                raise TypeError("Query must be a list of str")
+
+            params = {"q": query[0]}
             if country:
                 params["cr"] = f"country{country}"
             if language:
@@ -92,7 +93,7 @@ class BaseSearchTool:
                 response.raise_for_status()
                 logging.info(f"Google search successful for query: {query}")
             except requests.RequestException as e:
-                logging.error(f"Google search failed for query '{query}': {str(e)}")
+                logging.error(f"Google search failed: {str(e)}")
                 return []
 
             soup = BeautifulSoup(response.text, 'html.parser')
@@ -107,10 +108,10 @@ class BaseSearchTool:
                         'link': link,
                         'snippet': snippet.get_text() if snippet else ''
                     })
-            logging.info(f"Google search returned {len(search_results)} results for query: {query}")
+            logging.info(f"Google search returned {len(search_results)} results")
             return search_results
         else:
-            raise ValueError("Either a single query or url_file must be provided")
+            raise ValueError("Either query list or url_file must be provided")
 
     def retrieve_content(self, url: str) -> str:
         """
@@ -133,7 +134,6 @@ class BaseSearchTool:
         try:
             response = requests.get(url, headers=headers, timeout=timeout_duration)
             response.raise_for_status()
-            content_type = response.headers.get('Content-Type', '')
             logging.info(f"Successfully retrieved content from URL: {url}")
         except requests.exceptions.Timeout:
             logging.error(f"Request timed out for URL: {url}")
@@ -142,29 +142,12 @@ class BaseSearchTool:
             logging.error(f"Request failed for URL: {url} with error: {str(e)}")
             return f"An error occurred: {str(e)}"
 
-        if 'application/pdf' in content_type:
-            # PDF feldolgozása
-            try:
-                from io import BytesIO
-                from PyPDF2 import PdfReader
+        soup = BeautifulSoup(response.text, 'html.parser')
+        paragraphs = soup.find_all('p')
+        content = ' '.join([p.get_text() for p in paragraphs])
+        return content
 
-                pdf_content = BytesIO(response.content)
-                reader = PdfReader(pdf_content)
-                text = ''
-                for page in reader.pages:
-                    text += page.extract_text()
-                return text
-            except Exception as e:
-                logging.error(f"Error processing PDF content from URL: {url} with error: {str(e)}")
-                return f"An error occurred processing PDF: {str(e)}"
-        else:
-            # HTML feldolgozása
-            soup = BeautifulSoup(response.text, 'html.parser')
-            paragraphs = soup.find_all('p')
-            content = ' '.join([p.get_text() for p in paragraphs])
-            return content
-
-    def html_to_markdown(self, html_string: str) -> str:
+    def html_to_markdown(self, html_string):
         """
         Converts HTML content to Markdown format.
 
@@ -194,7 +177,7 @@ class SearchAndRetrieveTool(BaseSearchTool):
         parameters (str): The parameters that can be passed to the tool, including optional settings like country, language, and date range.
 
     Methods:
-        _run(queries, url_file, languages, country, geolocation, results_per_page, date_range):
+        _run(query, url_file, country, language, geolocation, results_per_page, date_range):
             Executes the search and retrieval process, returning the content in Markdown format along with the URLs.
 
         clone():
@@ -202,86 +185,46 @@ class SearchAndRetrieveTool(BaseSearchTool):
     """
     name: str = "SearchAndRetrieveTool"
     description: str = "Searches the internet and returns the found URLs and their full content."
-    parameters: str = "Mandatory: queries (list of queries), languages (list of language codes). Optional: url_file, country, geolocation, results_per_page, date_range (e.g., 'w' for last week, 'm' for last month, 'y' for last year)"
- 
-    def _run(
-        self,
-        queries: List[str] = None,
-        url_file: Optional[str] = None,
-        languages: List[str] = None,
-        country: Optional[str] = None,
-        geolocation: Optional[str] = None,
-        results_per_page: Optional[int] = 10,
-        date_range: Optional[str] = None
-    ) -> Tuple[str, bool]:
+    parameters: str = "Mandatory: query, Optional: url_file, country, language, geolocation, results_per_page, date_range (e.g., 'w' for last week, 'm' for last month, 'y' for last year)"
+
+    def _run(self, query: str = None, url_file: Optional[str] = None, country: Optional[str] = None, language: Optional[str] = None, geolocation: Optional[str] = None, results_per_page: Optional[int] = 10, date_range: Optional[str] = None) -> Dict[str, str]:
         """
-        Executes the search and retrieval process for multiple queries and languages.
+        Executes the search and retrieval process, returning the content in Markdown format along with the URLs.
 
         Parameters:
-            queries (List[str]): List of search queries.
+            query (str): The search query.
             url_file (Optional[str]): A file containing URLs to process instead of performing a search.
-            languages (List[str]): List of language codes corresponding to each query.
             country (Optional[str]): A country code to limit search results to a specific country.
+            language (Optional[str]): A language code to limit search results to a specific language.
             geolocation (Optional[str]): A geolocation parameter for more localized search results.
             results_per_page (Optional[int]): Number of search results to return per page (default is 10).
             date_range (Optional[str]): Limits the search results to a specific date range ('w' for last week, 'm' for last month, 'y' for last year).
 
         Returns:
-            Tuple[str, bool]: A tuple containing the combined content and the task completion status.
+            Dict[str, str]: A dictionary containing the full content of the search results in Markdown format and the task completion status.
+
+        Logs:
+            Info: When the search and retrieval task starts and completes.
         """
-        logging.info(f"Running SearchAndRetrieveTool with queries: {queries} and languages: {languages}")
-        
-        if not queries or len(queries) == 0:
-            raise ValueError("At least one query must be provided")
-        if not languages or len(languages) == 0:
-            raise ValueError("At least one language must be provided")
-
-        if len(queries) != len(languages):
-            # adjust the length of the two list
-            min_length = min(len(queries), len(languages))
-            queries = queries[:min_length]
-            languages = languages[:min_length]
-
-        search_results = []
-        for query, language in zip(queries, languages):
-            results = self.google_search(
-                query=query,
-                country=country,
-                language=language,
-                geolocation=geolocation,
-                results_per_page=results_per_page,
-                date_range=date_range
-            )
-            search_results.extend(results)
-        
-        # Deduplicate results based on URLs
-        unique_results = {}
-        for result in search_results:
-            url = result['link']
-            if url not in unique_results:
-                unique_results[url] = result
-        
-        results_with_content = []
-        for result in unique_results.values():
-            content = self.retrieve_content(result['link'])
-            if content and content != "Request timed out" and not content.startswith("An error occurred"):
-                markdown_content = self.html_to_markdown(content)
-                results_with_content.append({
-                    'url': result['link'],
-                    'content': markdown_content
-                })
-        
-        if not results_with_content:
-            logging.warning("No valid content retrieved from the search results.")
-            full_content = "No valid content retrieved from the search results."
-            task_completed = False
+        logging.info(f"Running SearchAndRetrieveTool with query: {query}")
+        if url_file:
+            search_results = self.google_search(url_file=url_file, country=country, language=language, geolocation=geolocation, results_per_page=results_per_page, date_range=date_range)
         else:
-            full_content = f"The result of my research is in the next JSON list with the source URL and the content in each finding:\n\n{str(results_with_content)}"
-            task_completed = True
-        
+            search_results = self.google_search(query, country=country, language=language, geolocation=geolocation, results_per_page=results_per_page, date_range=date_range)
+
+        search_results = self.google_search(query, url_file, country, language, geolocation, results_per_page, date_range)
+        results = []
+        for result in search_results:
+            content = self.retrieve_content(result['link'])
+            if len(content) > 0:
+                results.append({
+                    'url': result['link'],
+                    'content': self.html_to_markdown(content)
+                })
+        full_content = f"The result of my research is in the next json list with the source url and the content in each finding:\n\n {str(results)}"
+        task_completed = True if results else False
         logging.info(f"SearchAndRetrieveTool task completed: {task_completed}")
         return full_content, task_completed
-
 
     def clone(self):
         """
@@ -292,7 +235,7 @@ class SearchAndRetrieveTool(BaseSearchTool):
         """
         return SearchAndRetrieveTool()
 
-class SearchRetrieveAndSaveTool(SearchAndRetrieveTool):
+class SearchRetrieveAndSaveTool(SearchAndRetrieveTool, SaveToFileTool):
     """
     Class Name: SearchRetrieveAndSaveTool
     Description: This class combines the functionality of searching, retrieving content, and saving the content to a file.
@@ -303,7 +246,7 @@ class SearchRetrieveAndSaveTool(SearchAndRetrieveTool):
         parameters (str): The parameters that can be passed to the tool, including query, filename, directory, and optional settings like country, language, and date range.
     
     Methods:
-        _run(queries, directory, filename, url_file, languages, country, geolocation, results_per_page, date_range):
+        _run(query, directory, filename, url_file, country, language, geolocation, results_per_page, date_range):
             Executes the search, retrieves the content, and saves the result to the specified file in the given directory.
         
         clone():
@@ -311,69 +254,34 @@ class SearchRetrieveAndSaveTool(SearchAndRetrieveTool):
     """
     name: str = "SearchRetrieveAndSaveTool"
     description: str = "Searches the internet, retrieves content, and saves the result to a file in a specified directory."
-    parameters: str = "Mandatory: queries (list of queries), languages (list of language codes), directory (str), filename (str). Optional: url_file, country, geolocation, results_per_page, date_range (e.g., 'w' for last week, 'm' for last month, 'y' for last year)"
+    parameters: str = "Mandatory: query, directory , filename, Optional: url_file, country, language, geolocation, results_per_page, date_range (e.g., 'w' for last week, 'm' for last month, 'y' for last year)"
 
-    def _run(
-        self,
-        queries: List[str] = None,
-        directory: str = None,
-        filename: str = None,
-        url_file: Optional[str] = None,
-        languages: Optional[List[str]] = None,
-        country: Optional[str] = None,
-        geolocation: Optional[str] = None,
-        results_per_page: Optional[int] = 10,
-        date_range: Optional[str] = None
-    ) -> Tuple[str, bool]:
+    def _run(self, query: str = None, directory: str = None, filename: str = None, url_file: Optional[str] = None, country: Optional[str] = None, language: Optional[str] = None, geolocation: Optional[str] = None, results_per_page: Optional[int] = 10, date_range: Optional[str] = None) -> tuple:
         """
         Executes the search, retrieves the content, and saves the result to the specified file in the given directory.
 
         Parameters:
-            queries (List[str]): The search query list.
+            query (str): The search query.
             directory (str): The directory where the file should be saved.
             filename (str): The name of the file to save the content to.
             url_file (Optional[str]): A file containing URLs to process instead of performing a search.
-            languages (Optional[List[str]]): A list of language codes corresponding to each query.
             country (Optional[str]): A country code to limit search results to a specific country.
+            language (Optional[str]): A language code to limit search results to a specific language.
             geolocation (Optional[str]): A geolocation parameter for more localized search results.
             results_per_page (Optional[int]): Number of search results to return per page (default is 10).
             date_range (Optional[str]): Limits the search results to a specific date range ('w' for last week, 'm' for last month, 'y' for last year).
 
         Returns:
-            Tuple[str, bool]: A tuple containing the file path or an error message if an exception occurs, along with a task_completed flag.
+            tuple: A tuple containing the file path or an error message if an exception occurs, along with a task_completed flag.
         """
-        logging.info(f"Running SearchRetrieveAndSaveTool with queries: {queries} and languages: {languages}")
-        
         # Perform the search and retrieve content
-        try:
-            search_results, task_completed = super()._run(
-                queries=queries,
-                url_file=url_file,
-                languages=languages,
-                country=country,
-                geolocation=geolocation,
-                results_per_page=results_per_page,
-                date_range=date_range
-            )
-        except Exception as e:
-            logging.error(f"Error during search and retrieve: {str(e)}")
-            return f"An error occurred during search and retrieve: {str(e)}", False
-
+        search_results, task_completed = super()._run(query, url_file, country, language, geolocation, results_per_page, date_range)
+        
         if task_completed:
-            try:
-                # Save the retrieved content to a file
-                save_result, save_completed = SaveToFileTool()._run(txt=search_results, filename=filename, directory=directory)
-                if save_completed:
-                    logging.info(f"Content successfully saved to {save_result}")
-                    return f"Content successfully saved to {save_result}", True
-                else:
-                    logging.error("Failed to save content to file.")
-                    return "Failed to save content to file.", False
-            except Exception as e:
-                logging.error(f"Error during saving to file: {str(e)}")
-                return f"An error occurred during saving to file: {str(e)}", False
+            # Save the retrieved content to a file
+            save_result, save_completed = SaveToFileTool()._run(txt=search_results, filename=filename, directory=directory)
+            return save_result, save_completed
         else:
-            logging.warning("Search and retrieve process failed.")
             return "Search and retrieve process failed.", False
 
     def clone(self):
