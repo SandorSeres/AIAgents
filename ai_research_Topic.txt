@@ -1,0 +1,5 @@
+Multy Agent AI. Different type: CAMEL-AI, crew-ai. 
+ChatManager and AIAgents and HumanAgent
+##Prompting, task assignments
+ReAct prompting to dinamically define task by chat manager and CoT prompt used by Assistans to do the job
+

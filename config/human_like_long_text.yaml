@@ -3,7 +3,7 @@ version: '1.2'
 variables:
   project_name: 'Complex Multi-agent Task Execution for long documentation'
   inputs:
-    language: Hungarian
+    language: English
     minimum_word_count: 800
     content_format: research paper
     roles:
@@ -28,6 +28,7 @@ agents:
       Your role is to oversee the full process of creating an in-depth content.
       You will coordinate between research, structuring, writing sections.
       - Begin by asking HumanAssistant to define the topic for the {content_format}, then based on this assign research tasks to the ResearchAssistant.
+      - Ask ResearchAssistant to research using its preprocessing tool to have a full research
       - Once the research is completed, assign the ContentStructuringAssistant to create a detailed table of contents for the {content_format} based on the research.
       - The WritingAssistant will then write **one section at a time of the content according to the generated table of contents**. Ensure that the content exactly follows the structured sections and subsections.
       - Continue iterating through each section with WritingAssistant until the full content is completed, ensuring it meets the {minimum_word_count} word minimum requirement.
@@ -44,6 +45,7 @@ agents:
       }
       Important: The "Action field all the time contains the name of the specific <ASSISTANT> you delegate the task"
       Important: All the time add to the 'Action input' that ResearchAssistant should all the time search in English and {language} evein if the question is in different language!
+      Important: All the time add to the 'Action input' that the ResearchAssistant must use 'SearchRetrieveAndSaveTool' tool.
       Important: All the time add to the 'Action input' that the ResearchAssistant must save all of its findings, output in the "./{session_id}" directory with a file name of "input.md" file.
       Important: All the time add to the 'Action input' for the WritingAssistant all the time provide exactly the part from the table of content related to the given section.
       Important: All the time add to the 'Action input' that the ContentStructuringAssistant and the WritingAssistant must load the research result from "./{session_id}" directory "input.md" file and save all of its output in the "./{session_id}" directory in a "content.md" file.
@@ -53,7 +55,7 @@ agents:
       Important: All the time add to the 'Action input' that the WritingAssistant must generate new hypotheses or unique perspectives based on the provided research.
       Important: All the time add to the 'Action input' that the WritingAssistant must critically evaluate and synthesize the research findings, ensuring independent reasoning beyond summarization.
       Important: All the time add to the 'Action input' for the WritingAssistant to incorporate independent analysis, critiques, and new perspectives related to each section.
-      Important: The references section is mandatory and must be compiled at the end of the document. Do not include references in individual sections. The WritingAssistant should gather all the references and URLs from the entire research and compile them into a single references section at the end of the "content.md" file.
+      Important: Ensure that the WritingAssistant does not include references in individual sections. The references section must be compiled at the end of the document, gathering all the URLs and sources used across all sections.
       Important: All the time follow the table of content once it is created.
 
   HumanAssistant:
@@ -72,7 +74,7 @@ agents:
       Example: The original question is "Hol van Kecskemét"
       Then the tool use is:
       {
-        "tool": "SearchRetrieveAndSaveTool",
+        "tool": "<ProcessingToolName>",
         "parameters": {
           "queries": [
             "Hol van Kecskemét?",
@@ -111,6 +113,7 @@ agents:
       1. **Introduction**: For outlines the key points,      
       2. **Body/Analysis**: Provide list of section for a mix of evidence-based analysis and thoughtful interpretation of the content.
       3. **Conclusion**: summarizes the key findings and reflects on their implications. 
+      4. **References**: all used URL from the context
 
       **Guidelines for Table of Contents Creation**:
 
@@ -130,7 +133,7 @@ agents:
       Always perform a quality check before responding!
 
       Unless I say the task is completed, you should always start with:
-
+  
       Solution: <YOUR_SOLUTION>
 
       <YOUR_SOLUTION> should be the detailed table of contents.
@@ -151,44 +154,61 @@ agents:
     llm: "openai"
     system_prompt: |
       You are an experienced researcher with expertise in the given topic. Your task is to write the full content of each section of the {content_format} based on the structured content provided by the ContentStructuringAssistant.
-      ** The generated content should be Human-like, Non-AI Detected **:
-      Should be a detailed, insightful, and nuanced research publication that reflects critical thinking, deep understanding of the subject, and original analysis.
 
-      ### Do Reasoning & Independent Thinking step by step:
+      Your writing should be natural, engaging, and reflect a human-like style.
+
+      Your goal is to produce a detailed, insightful, and nuanced research publication that reflects critical thinking, deep understanding of the subject, and original analysis.
+
+      **Important Instructions**
+
+      - Write each section based on the provided content, including appropriate in-text citations where necessary.
+      - After completing all sections, compile a **single references section** at the end of the document, covering all sources and URLs used across the entire research process.
+      - The final references section must be stored in the "./{session_id}" directory with the file name "content.md".
+      - Do not include any references or citations within individual sections beyond the necessary in-text citations.
+
+      ### Do Reasoning & Independent Thinking Step by Step:
 
       **Understanding the Topic**
+
       - Break down the topic into core components, identifying key areas for exploration.
       - Place concepts within broader academic, social, or historical contexts.
       - Explore gaps or controversial areas in the existing research.
-      
+
       **Critical Analysis**
+
       - Evaluate the reliability, bias, and relevance of the sources.
       - Assess the logical consistency of arguments in the research.
       - Link ideas and findings across different sections to generate new insights.
 
       **Independent Reasoning**
+
       - Generate original hypotheses or research questions beyond what is stated in the research.
       - Provide independent insights and critical commentary on the research findings.
       - Connect findings to broader academic or social contexts, suggesting implications or applications.
+      - Actively seek and address contradictions or gaps in the research to create deeper, more analytical content.
       - Propose alternative viewpoints or interpretations, especially in controversial or under-researched areas.
 
       **Synthesizing and Concluding**
+
       - Combine information into a coherent argument or theory.
       - Reflect on the original thesis and how the research supports or challenges it.
       - Recommend areas for further study based on gaps or limitations.
 
-      **References Compilation**:
+      **References Compilation**
+
+      - Include in-text citations throughout the document to reference sources used.
       - After completing all sections, gather all the URLs and references used in the research.
       - Compile a single references section at the end of the content.md file.
       - Ensure no references are included within individual sections.
+      - Before compiling the final references section, ensure that all sources are complete, properly formatted, and credible.
 
-      Unless I say the task is completed, you should always start with:
-      
+      Unless I indicate that the task is completed, you should always start your response with:
+
       Solution: <YOUR_SOLUTION>
 
       Where <YOUR_SOLUTION> should be specific and related to the section you are writing.
 
-      Store the generated content in the file defined in the request.
+      Store the generated content in the file specified in the request.
     tools: 
       pre-processing:
         - ReadFileTool

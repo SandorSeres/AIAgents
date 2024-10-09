@@ -9,11 +9,11 @@ License: [Creative Commons Zero v1.0 Universal]
 
 import logging
 from tools.execute_tool import RunPythonTool
-from tools.search_tool import SearchAndRetrieveTool
+from tools.search_tool import *
 from tools.image_generation import ImageGenerationTool
 from tools.file_tool import ReadFileTool, SaveToFileTool
 from tools.dummy_tool import DummyTool
-from tools.researchgate_tool import *
+from tools.rag_tools import *
 import openai
 from openai import OpenAIError
 import tiktoken
@@ -623,8 +623,8 @@ Correct the JSON and reply with a valid JSON format.
 
         # Pre-processing
         tool_result = None
+        flag = False
         if self.pre_processing_tools:
-            flag = False
             n = 0
             while not flag and n < 4:  # Use 'and' to continue looping until 4 tries
                 n += 1  # Increment the attempt counter
@@ -661,6 +661,10 @@ Correct the JSON and reply with a valid JSON format.
 
         if asyncio.iscoroutine(output_message):
             output_message = await output_message
+
+        # The tool result is already processed by the main llm, so remove it
+        if flag:
+            self.memory.remove_top_of_short_term()
 
         await self.update_messages({'role': 'assistant', 'content': output_message}, HIGH_PRIORITY)
 

@@ -19,11 +19,11 @@ from tools.image_generation import ImageGenerationTool
 from tools.file_tool import *
 from tools.dummy_tool import DummyTool
 from tools.git_tool import *
-from tools.microsoft_news_tool import *
+from tools.rag_tools import *
 from tools.execute_tool import *
-from tools.researchgate_tool import *
 from typing import List
 from memory import Memory
+from util import *
 
 import logging
 from logging.handlers import RotatingFileHandler
@@ -34,6 +34,8 @@ def setup_logging():
     A formátum tartalmazza az időbélyeget, a napló szintjét, a logger nevét, az üzenetet, valamint a forrásfájlt és a sor számát.
     Legfeljebb 10 naplófájlt tart meg, egyenként maximum 5 MB méretben.
     """
+    # Ensure the directory exists
+    os.makedirs('./log', exist_ok=True)
     # Forgó fájlkezelő létrehozása
     rotating_handler = RotatingFileHandler(
         "./log/app.log",
@@ -147,7 +149,10 @@ def create_agent(role_name, agent_config):
     except Exception as e:
         logging.error(f"Error creating agent {role_name}: {e}", exc_info=True)
 
-def extract_json_string(text):
+import json
+import logging
+
+def extract_json_string(text: str) -> str:
     """
     Extracts a JSON string from a block of text.
 
@@ -155,18 +160,65 @@ def extract_json_string(text):
         text (str): The text containing the JSON string.
 
     Returns:
-        str: The extracted JSON string, or an empty JSON object if extraction fails.
+        str: The extracted JSON string, or an empty JSON object/list if extraction fails.
 
     Logs:
         Warning: If there is an error during JSON extraction.
     """
+    def find_matching_end(text, start_pos, open_char, close_char):
+        stack = 1
+        for i in range(start_pos + 1, len(text)):
+            if text[i] == open_char:
+                stack += 1
+            elif text[i] == close_char:
+                stack -= 1
+                if stack == 0:
+                    return i + 1
+        return -1  # No matching closing character found
+
     try:
-        start = text.index('{')
-        end = text.rindex('}') + 1
-        return text[start:end]
-    except ValueError:
-        logging.warning(f"JSON extraction error: text: {text}")
-        return "{}"
+        # Find the first occurrence of '{' or '['
+        first_brace = text.find('{')
+        first_bracket = text.find('[')
+
+        if first_brace == -1 and first_bracket == -1:
+            raise ValueError("No JSON object or array found in the text.")
+
+        if first_brace == -1:
+            start = first_bracket
+            open_char = '['
+            close_char = ']'
+        elif first_bracket == -1:
+            start = first_brace
+            open_char = '{'
+            close_char = '}'
+        else:
+            if first_brace < first_bracket:
+                start = first_brace
+                open_char = '{'
+                close_char = '}'
+            else:
+                start = first_bracket
+                open_char = '['
+                close_char = ']'
+
+        end = find_matching_end(text, start, open_char, close_char)
+        if end == -1:
+            raise ValueError("No matching closing character found for JSON.")
+
+        json_str = text[start:end]
+        return json_str
+
+    except Exception as e:
+        logging.warning(f"JSON extraction error: {e}; text: {text}")
+        # Determine what to return based on the first opening character
+        if 'open_char' in locals():
+            if open_char == '{':
+                return "{}"
+            elif open_char == '[':
+                return "[]"
+        return "{}"  # Default to empty JSON object
+
 
 def parse_user_instruction(instruction):
     """

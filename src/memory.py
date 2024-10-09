@@ -28,6 +28,8 @@ class Memory:
         self.tool_old_history = []
         self.tool_history = []
         self.name = agent_name
+        # Ensure the directory exists
+        os.makedirs('./memories', exist_ok=True)
         self.memory_file = f"./memories/{agent_name}_memory.json"
         self.load_long_term_memory()
 
@@ -45,6 +47,16 @@ class Memory:
         self.short_term_memory.append({'message': message, 'priority': priority})
         if len(self.short_term_memory) > 100:  # Optional limit for short-term memory
             self.short_term_memory.pop(0)
+
+    def remove_top_of_short_term(self):
+        """
+        Removes the last item added to the short-term memory.
+        """
+        if self.short_term_memory:
+            removed_item = self.short_term_memory.pop()
+            logging.info(f"Removed last element from short-term memory")
+        else:
+            logging.warning("Short-term memory is already empty.")
 
     def add_to_long_term(self, message):
         """
