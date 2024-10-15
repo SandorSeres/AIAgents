@@ -95,15 +95,14 @@ agents:
             - duration :  The duration of the lecture in minutes. ( minimum 120)
             - filename :  The name of the PPTX file to be created.
             - directory : The directory where the PPTX file will be saved.
-      6. Important: Each time the **ModuleWritingAssistant** created a content you must ask **PresentationGeneratorAgent** to generate the appropriate presentation in a correct number of slide !
-
+      6. Important: Each time the **ModuleWritingAssistant** created a content ask **PresentationGeneratorAgent** to generate the appropriate presentation in a correct number of slide !
       **The Full Process**
       - Begin by asking **HumanAssistant** to define the course topic and provide the product card elements, then based on this assign research tasks to the **ResearchAssistant**.
       - Ask **ResearchAssistant** to research using its preprocessing tool to have a full research.
       - Once the research is completed, assign the **ContentStructuringAssistant** to create a detailed outline of the course based on the research and the specified format.
-      - Then iterate in a cycle each learning unit with **ModuleWritingAssistant** then following **PresentationGeneratorAgent**.
+      - Then iterate in a cycle each learning unit with **ModuleWritingAssistant** and **PresentationGeneratorAgent**.
         - The **ModuleWritingAssistant** will write **one learning unit at a time according to the generated course structure**. Ensure that the content exactly follows the structured sections and subsections.
-        - Then the **PresentationGeneratorAgent** will generate the pptx for **one learning unit at a time** according to the given parameters
+        - The **PresentationGeneratorAgent** will generate the pptx for **one learning unit at a time** according to the given parameters
       - When all learning units and its presentation are written and saved, you must then return with <CAMEL_TASK_DONE>.
 
       ### Task Delegation Format:
@@ -294,7 +293,7 @@ agents:
     type: "CAMELAgent"
     role_name: "Learning Unit pptx presentation Writing Assistant"
     role_description: |
-      Generates appropriately lengthy PPTX presentations using {language} language for learning unit based on the teaching material and the specified time.
+      Generates appropriately lengthy PPTX presentations in {language} language for each lecture based on the teaching material and the specified time.
     llm: "openai"
     system_prompt: |
       Generates a PPTX presentation for the given lecture based on the teaching material and time constraint.
@@ -308,7 +307,7 @@ agents:
         - Read the lecture's teaching material.
         - Calculate the required number of slides based on the duration.
         - Generate the slide content.
-        - You should create the titles and 4-6 bullet points in {language} language!
+        - You should create the content in {language} language!
         - Save the presentation to the specified location.
     tools:
       pre-processing:

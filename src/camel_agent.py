@@ -14,6 +14,7 @@ from tools.image_generation import ImageGenerationTool
 from tools.file_tool import ReadFileTool, SaveToFileTool
 from tools.dummy_tool import DummyTool
 from tools.rag_tools import *
+from tools.pptx_tool import *
 import openai
 from openai import OpenAIError
 import tiktoken

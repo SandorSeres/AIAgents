@@ -11,6 +11,7 @@ import openai
 import logging
 import util
 import shutil
+import glob
 
 
 # Importáljuk a meglévő kereső toolokat
@@ -227,7 +228,17 @@ class RAGIndexerTool:
                 logging.warning("No embeddings were generated.")
         else:
             logging.warning("No documents to index.")
-        #shutil.rmtree(directory, ignore_errors=True)
+
+        archive_directory = os.path.join(directory, 'archive')
+        # Ha az archive könyvtár nem létezik, hozzuk létre
+        os.makedirs(archive_directory, exist_ok=True)
+
+        # JSON fájlok áthelyezése az archive könyvtárba
+        for file in glob.glob(os.path.join(directory, "*.json")):
+            if "doc_ids.json" in file:
+                continue
+            shutil.move(file, archive_directory)
+
         # Logoljuk az összes indexált URL-t
         if indexed_urls:
             logging.info("Indexed URLs:")
@@ -625,12 +636,30 @@ class RAGSearchAndSaveTool:
             else:
                 raise Exception(f"Search failed for query '{query}': {results_json}")
 
+        # Flat lista létrehozása az összes eredményből
+        flat_results = [item for inner_list in all_results for item in inner_list]
+        unique_results = []
+        seen_urls = set()
+
+        # Az egyedi URL-ek kiválasztása
+        for item in flat_results:
+            if item['url'] not in seen_urls:
+                unique_results.append(item)
+                seen_urls.add(item['url'])
+ 
+        # Flat lista rendezése az "avg_distance" kulcs alapján növekvő sorrendben
+        unique_results.sort(key=lambda x: float(x['avg_distance']), reverse=False)
+
+        # Csak az első top_k elem kiválasztása
+        top_k_results = unique_results[:top_k]
+
+
         # 4. Save results to file
         output_path = os.path.join(directory, filename)
         with open(output_path, 'w', encoding='utf-8') as f:
-            json.dump(all_results, f, ensure_ascii=False, indent=4)
+            json.dump(top_k_results, f, ensure_ascii=False, indent=4)
 
-        print(f"Results saved to {output_path}")
+        return f"Results saved to {output_path}", True
 
     def clone(self):
         """

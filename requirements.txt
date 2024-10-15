@@ -17,6 +17,7 @@ tools
 transformers
 html2text
 PyPDF2
+python-pptx
 scrapy
 playwright
 

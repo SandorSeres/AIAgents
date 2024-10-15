@@ -20,6 +20,7 @@ from tools.file_tool import *
 from tools.dummy_tool import DummyTool
 from tools.git_tool import *
 from tools.rag_tools import *
+from tools.pptx_tool import *
 from tools.execute_tool import *
 from typing import List
 from memory import Memory
