@@ -363,6 +363,236 @@ class RAGIndexerTool:
         """
         return RAGIndexerTool()
 
+# 2. RAGIndexerToolWithoutNet Osztály
+class RAGIndexerToolWithoutNet:
+    """
+    Class Name: RAGIndexerToolWithoutNet
+    Description: Singleton osztály a FAISS index betöltésére és frissítésére a megadott könyvtárban lévő fájlokból. Nem támaszkodik netes keresésre.
+    
+    Attributes:
+        name (str): A tool neve.
+        description (str): A tool leírása.
+        parameters (str): A tool paraméterei.
+    
+    Methods:
+        _run(input_directory, output_directory):
+            Betölti a FAISS indexet és a megadott könyvtárban lévő fájlokból épít adatbázist.
+        
+        clone():
+            Visszaad egy új példányt a RAGIndexerToolWithoutNet-ból.
+    """
+    
+    name: str = "RAGIndexerToolWithoutNet"
+    description: str = "Loads existing FAISS index and indexes documents found in the given directory without relying on internet search."
+    parameters: str = "Mandatory: input_directory (str), output_directory (str)"
+    
+    _instance = None
+    _lock = threading.Lock()
+
+    def __new__(cls, index_path: str = 'faiss_index.bin', doc_ids_path: str = 'doc_ids.json'):
+        with cls._lock:
+            if cls._instance is None:
+                cls._instance = super(RAGIndexerToolWithoutNet, cls).__new__(cls)
+                cls._instance._initialized = False
+        return cls._instance
+
+    def __init__(self, index_path: str = 'faiss_index.bin', doc_ids_path: str = 'doc_ids.json'):
+        if self._initialized:
+            return
+        self.index_path = index_path
+        self.doc_ids_path = doc_ids_path
+        self.embedding_model = "text-embedding-ada-002"
+        self.dimension = 1536  # A text-embedding-ada-002 modell dimenziója
+        
+        # Flag az index betöltésének ellenőrzésére
+        self.index_loaded = False
+        self.index = None
+        self.doc_ids = []
+        
+        self._initialized = True
+
+    def get_embedding(self, text: str, model: str = "text-embedding-ada-002") -> Optional[List[float]]:
+        """
+        Lekér egy embeddinget a megadott szöveghez az OpenAI API segítségével.
+        
+        :param text: A szöveg, amit embedelni szeretnél.
+        :param model: Az OpenAI embedding modell neve.
+        :return: A szöveg embeddingje listaként, vagy None hibát esetén.
+        """
+        try:
+            response = openai.embeddings.create(
+                input=text,
+                model=model
+            )
+            return response.data[0].embedding
+        except Exception as e:
+            logging.error(f"Error generating embedding: {e}")
+            return None
+
+    def get_tokenizer(self) -> tiktoken.Encoding:
+        """
+        Betölti az OpenAI tiktoken encodert a text-embedding-ada-002 modellhez.
+        """
+        return tiktoken.get_encoding("cl100k_base")
+
+    def generate_document_embeddings(self, documents: List[Dict[str, str]], chunk_size: int = 8000, overlap: int = 0) -> Tuple[np.ndarray, List[Dict]]:
+        """
+        Generálja a dokumentumok chunkjainak embeddingjeit, kezelve a hosszú szövegeket is.
+        
+        :param documents: Lista dokumentumokkal, amelyek tartalmazzák az 'id' és 'text' kulcsokat.
+        :param chunk_size: A maximális token szám egy chunkban.
+        :param overlap: Az átfedés mértéke a chunkok között.
+        :return: Tuple (embeddings, doc_ids)
+        """
+        embeddings = []
+        doc_ids = []
+        tokenizer = self.get_tokenizer()
+        chunk_id_counter = 0  # Egyedi chunk ID-k generálásához
+        
+        for doc in documents:
+            logging.info(f"Processing document ID: {doc['id']}")
+            text = doc['text']
+            tokens = tokenizer.encode(text)
+            doc_id = doc['id']
+            
+            # Daraboljuk fel a dokumentumot chunkokra
+            chunks = []
+            start = 0
+            while start < len(tokens):
+                end = start + chunk_size
+                chunk_tokens = tokens[start:end]
+                chunk_text = tokenizer.decode(chunk_tokens)
+                chunks.append(chunk_text)
+                start += chunk_size - overlap  # Átfedés
+            
+            # Generáljunk embeddingeket minden chunkhoz
+            for chunk in chunks:
+                embedding = self.get_embedding(chunk, model=self.embedding_model)
+                if embedding:
+                    embeddings.append(embedding)
+                    doc_ids.append({
+                        "chunk_id": chunk_id_counter,
+                        "doc_id": doc_id,
+                        "content": chunk  # Tároljuk a chunk tartalmát, ha szükséges
+                    })
+                    chunk_id_counter += 1
+                else:
+                    logging.warning(f"Failed to generate embedding for a chunk in document ID: {doc_id}")
+        
+        embeddings = np.array(embeddings).astype('float32')
+        return embeddings, doc_ids
+
+    def index_existing_documents(self, input_directory: str):
+        """
+        Betölti a már meglévő, indexelt RAG adatokat a megadott könyvtárból, indexeli őket, és végül logolja az összes indexált URL-t.
+        
+        :param input_directory: A könyvtár, ahol a fájlok találhatók.
+        """
+        logging.info(f"Indexing existing documents from directory: {input_directory}")
+        documents = []
+        logging.info(os.listdir(input_directory))
+        for filename in os.listdir(input_directory):
+            if filename.endswith('.json'):
+                filepath = os.path.join(input_directory, filename)
+                if os.path.getsize(filepath) == 0:
+                    logging.warning(f"Empty JSON file skipped: {filepath}")
+                    continue
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    try:
+                        data = json.load(f)
+                        for item in data:
+                            content = item.get('content')
+                            import uuid
+                            doc_id = uuid.uuid4()
+                            if content:
+                                documents.append({
+                                    "id": str(doc_id),
+                                    "text": content
+                                })
+                    except json.JSONDecodeError as e:
+                        logging.error(f"Error decoding JSON from file {filepath}: {e}")
+        # Generáljuk az embeddingeket és indexeljük őket
+        if documents:
+            embeddings, doc_ids = self.generate_document_embeddings(documents)
+            if embeddings.size > 0:
+                if self.index is None:
+                    self.index = faiss.IndexFlatL2(self.dimension)
+                    logging.info("Created a new FAISS index.")
+                self.index.add(embeddings)
+                self.doc_ids.extend(doc_ids)
+                self.save_index()
+            else:
+                logging.warning("No embeddings were generated.")
+        else:
+            logging.warning("No documents to index.")
+
+    def save_index(self, output_directory: str):
+        """
+        Mentse a FAISS indexet és a doc_ids mappingot fájlba.
+        
+        :param output_directory: A könyvtár, ahová az index és a doc_ids fájlokat menti.
+        """
+        try:
+            index_path = os.path.join(output_directory, self.index_path)
+            doc_ids_path = os.path.join(output_directory, self.doc_ids_path)
+            if self.index is not None:
+                faiss.write_index(self.index, index_path)
+                logging.info(f"FAISS index mentve a következő helyre: {index_path}")
+            with open(doc_ids_path, 'w', encoding='utf-8') as f:
+                json.dump(self.doc_ids, f, ensure_ascii=False, indent=4)
+            logging.info(f"doc_ids mapping mentve a következő helyre: {doc_ids_path}")
+        except Exception as e:
+            logging.error(f"Error saving index and doc_ids: {e}")
+
+    def _run(self, input_directory: str, output_directory: str) -> Tuple[str, bool]:
+        """
+        Betölti a meglévő FAISS indexet (ha még nem történt meg), és a megadott könyvtárban található fájlokból épít adatbázist.
+        
+        :param input_directory: A könyvtár, ahol a fájlok találhatók.
+        :param output_directory: A könyvtár, ahová az index és a doc_ids fájlokat menti.
+        :return: Tuple (result message, success flag)
+        """
+        try:
+            if not self.index_loaded:
+                # Betöltjük a FAISS indexet és a doc_ids mappingot
+                index_path = os.path.join(output_directory, self.index_path)
+                doc_ids_path = os.path.join(output_directory, self.doc_ids_path)
+                if os.path.exists(index_path):
+                    logging.info("Loading existing FAISS index...")
+                    self.index = faiss.read_index(index_path)
+                    logging.info("FAISS index loaded successfully.")
+                else:
+                    logging.info("FAISS index not found. Creating a new index...")
+                    self.index = faiss.IndexFlatL2(self.dimension)
+                
+                if os.path.exists(doc_ids_path):
+                    logging.info("Loading existing doc_ids mapping...")
+                    with open(doc_ids_path, 'r', encoding='utf-8') as f:
+                        self.doc_ids = json.load(f)
+                    logging.info("doc_ids mapping loaded successfully.")
+                else:
+                    logging.info("doc_ids mapping not found. Creating a new mapping...")
+                    self.doc_ids = []
+                
+                self.index_loaded = True
+            
+            # Indexeljük a könyvtárban található dokumentumokat
+            self.index_existing_documents(input_directory)
+            self.save_index(output_directory)
+            return "Index successfully updated with documents from the directory.", True
+        except Exception as e:
+            logging.error(f"Failed to update index with documents: {e}")
+            return f"Failed to update index: {e}", False
+
+    def clone(self):
+        """
+        Visszaad egy új példányt a RAGIndexerToolWithoutNet-ból.
+        
+        Returns:
+            RAGIndexerToolWithoutNet: Egy új példány a RAGIndexerToolWithoutNet osztályból.
+        """
+        return RAGIndexerToolWithoutNet()
+        
 class RAGSemanticSearchTool:
     """
     Class Name: RAGSemanticSearchTool
@@ -688,58 +918,6 @@ def main():
     search_and_save_tool.run_and_save(directory=data_directory, queries=real_queries, output_directory=output_directory, output_filename=output_filename)
 
 
-def omain():
-    # Konfigurációk
-    index_path = './faiss/faiss_index.bin'
-    doc_ids_path = './faiss/doc_ids.json'
-    data_directory = './search_results'  # Az a könyvtár, ahol a kereső toolok mentik az eredményeket
-
-    # Létrehozzuk a data_directory-t, ha nem létezik
-    if not os.path.exists("./faiss"):
-        os.makedirs("./faiss")
-        logging.info(f"Created faiss directory at ./faiss")
-    if not os.path.exists(data_directory):
-        os.makedirs(data_directory)
-        logging.info(f"Created data directory at {data_directory}")
-    
-    # Inicializáljuk a RAGIndexerTool-t
-    indexer = RAGIndexerTool(index_path=index_path, doc_ids_path=doc_ids_path)
-    
-    # Indexeljük a már meglévő dokumentumokat
-    logging.info("Indexing existing documents...")
-    indexer.index_existing_documents(directory=data_directory)
-    
-    # Frissítsük az indexet új dokumentumokkal valós lekérdezésekkel és opcionális paraméterekkel
-    real_queries = ["Budapest news"]  # Cseréld ki a valódi lekérdezésekre
-    logging.info("Updating index with new documents...")
-    optional = {
-        "languages" : ['en']
-    }
-    update_message, success = indexer._run(directory=data_directory, queries=real_queries,**optional)
-    if success:
-        logging.info(update_message)
-    else:
-        logging.error(update_message)
-    
-    # Inicializáljuk a RAGSemanticSearchTool-t
-    semantic_search = RAGSemanticSearchTool(index_path=index_path, doc_ids_path=doc_ids_path, top_k=5)
-    
-    # Példa lekérdezés
-    query = "Budapest news"
-    logging.info(f"Performing semantic search for query: '{query}'")
-    results_json, search_success = semantic_search._run(query=query)
-    
-    if search_success:
-        results = json.loads(results_json)
-        logging.info(f"\nLegrelevánsabb dokumentumok a '{query}' kérdésre:")
-        for i, doc in enumerate(results, 1):
-            logging.info(f"\nEredmény {i}:")
-            logging.info(f"URL: {doc['url']}")
-            logging.info(f"Tartalom: {doc['content'][:500]}...")  # Csak az első 500 karaktert jelenítjük meg
-            logging.info(f"Átlagos távolság: {float(doc['avg_distance']):.4f}")
-            logging.info(f"Score: {doc['score']}")
-    else:
-        logging.warning(results_json)
 
 if __name__ == "__main__":
     from dotenv import load_dotenv
