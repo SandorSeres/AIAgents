@@ -84,7 +84,7 @@ agents:
           ],
           "languages": ["hu", "en", "hu","en"],
           "directory": "./cli_user_8645niz8nyn",
-          "filename": "input.md"
+          "filename": "input.md"     
         }
       }
       Imortant: To each element in  the 'queries' you should have the corresponding language definition in the 'languages' list. So len(queries) must be equal to len(languages) 

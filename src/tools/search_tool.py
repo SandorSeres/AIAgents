@@ -11,10 +11,13 @@ License: [Creative Commons Zero v1.0 Universal]
 """
 
 import requests
+import urllib.request
+import feedparser
 from bs4 import BeautifulSoup
 from typing import List, Dict, Optional, Tuple
 import urllib.parse
 import html2text
+import arxiv
 import logging
 from tools.file_tool import AppendToFileTool  # Ensure this import is correct
 from itertools import zip_longest
@@ -25,6 +28,8 @@ import random
 import json
 import httpx  # For asynchronous HTTP requests
 from concurrent.futures import ThreadPoolExecutor, as_completed
+import fitz  # PyMuPDF
+from io import BytesIO
 
 
 class BaseSearchTool:
@@ -216,22 +221,34 @@ class BaseSearchTool:
         if 'application/pdf' in content_type:
             # Process PDF
             try:
-                from io import BytesIO
-                from PyPDF2 import PdfReader
 
-                pdf_content = BytesIO(response.content)
-                reader = PdfReader(pdf_content)
+                pdf_content = BytesIO(response.content)  # Load PDF content into a buffer
+                document = fitz.open(stream=pdf_content, filetype="pdf")  # Open the PDF from the stream
+
                 text = ''
-                for page in reader.pages:
-                    extracted_text = page.extract_text()
+                for page_num in range(document.page_count):  # Iterate through all pages
+                    page = document.load_page(page_num)  # Load each page
+                    extracted_text = page.get_text("text")  # Extract text from the page
                     if extracted_text:
                         text += extracted_text
                 return text
             except Exception as e:
                 logging.error(f"Error processing PDF content from URL: {url} with error: {str(e)}")
                 return f"An error occurred processing PDF: {str(e)}"
+        elif 'application/docx' in content_type:
+            # process docx
+            import docx
+            docx_content = BytesIO(response.content)
+            from pptx import Presentation
+            doc = docx.Document(docx_content)
+            return ' '.join([para.text for para in doc.paragraphs])
+        elif 'application/pptx' in content_type:
+            # process pptx
+            pptx_content = BytesIO(response.content)
+            prs = Presentation(pptx_content)
+            return ' '.join([shape.text for slide in prs.slides for shape in slide.shapes if hasattr(shape, 'text')])
         else:
-            # Process HTML
+            # Process txt/ HTML
             soup = BeautifulSoup(response.text, 'html.parser')
             paragraphs = soup.find_all('p')
             content = ' '.join([p.get_text() for p in paragraphs])
@@ -661,6 +678,291 @@ class CoreSearchRetrieveAndSaveTool(BaseSearchTool):
         """
         return CoreSearchRetrieveAndSaveTool()
 
+class ArxivSearchRetrieveAndSaveTool:
+    """
+    Class Name: ArxivSearchRetrieveAndSaveTool
+    Description: Searches arXiv for academic articles, retrieves content, and saves the result to a file.
+
+    Attributes:
+        name (str): The name of the tool.
+        description (str): A brief description of what the tool does.
+        parameters (str): The parameters that can be passed to the tool.
+
+    Methods:
+        _run(queries, directory, filename, results_per_page, download_pdfs):
+            Executes the search on arXiv, retrieves the content, and saves it to the specified file.
+
+        clone():
+            Returns a new instance of ArxivSearchRetrieveAndSaveTool with the same configuration.
+    """
+    name: str = "ArxivSearchRetrieveAndSaveTool"
+    description: str = "Searches arXiv for academic papers, retrieves content, and saves the result to a file in a specified directory."
+    parameters: str = "Mandatory: queries (list of queries), directory (str), filename (str). Optional: results_per_page, download_pdfs"
+
+    def _run(
+        self,
+        queries: List[str] = None,
+        directory: str = None,
+        filename: str = None,
+        results_per_page: Optional[int] = 10,
+        download_pdfs: bool = True
+    ) -> Tuple[str, bool]:
+        logging.info(f"Running ArxivSearchRetrieveAndSaveTool with queries: {queries}")
+
+        if not queries or len(queries) == 0:
+            raise ValueError("At least one query must be provided")
+        if not directory:
+            raise ValueError("A directory must be provided")
+        if not filename:
+            raise ValueError("A filename must be provided")
+
+        # Collect search results for each query using multithreading
+        all_search_results = []
+        with ThreadPoolExecutor() as executor:
+            future_to_query = {
+                executor.submit(self.arxiv_search, query=query, results_per_page=results_per_page, download_pdfs=download_pdfs, pdf_directory=directory): query
+                for query in queries
+            }
+            for future in as_completed(future_to_query):
+                query = future_to_query[future]
+                try:
+                    results = future.result()
+                    all_search_results.append(results)
+                except Exception as e:
+                    logging.error(f"ArXiv search failed for query '{query}' with error: {str(e)}")
+                    all_search_results.append([])
+
+        # Interleave the results
+        interleaved_results = []
+        for result_tuple in zip(*all_search_results):
+            for result in result_tuple:
+                if result is not None:
+                    interleaved_results.append(result)
+
+        # Deduplicate results based on URLs
+        unique_results = {result['url']: result for result in interleaved_results}
+        logging.info(f"URLs:\n {unique_results}\n")
+
+        if not unique_results:
+            logging.warning("No valid content retrieved from the search results.")
+            return "No valid content retrieved from the search results.", False
+
+        # Convert the list to JSON
+        full_content = f"The result of my research is in the next JSON list with the source URL and the content in each finding:\n\n{json.dumps(list(unique_results.values()), indent=4)}"
+        task_completed = True
+
+        # Save the retrieved content to a file
+        try:
+            save_result, save_completed = AppendToFileTool()._run(txt=full_content, filename=filename, directory=directory)
+            if save_completed:
+                logging.info(f"Content successfully saved to {save_result}")
+                return f"Content successfully saved to {save_result}", True
+            else:
+                logging.error("Failed to save content to file.")
+                return "Failed to save content to file.", False
+        except Exception as e:
+            logging.error(f"Error during saving to file: {str(e)}")
+            return f"An error occurred during saving to file: {str(e)}", False
+
+    def arxiv_search(self, query: str, results_per_page: Optional[int] = 10, download_pdfs: bool = True, pdf_directory: Optional[str] = None) -> List[Dict[str, str]]:
+        """
+        Searches arXiv for academic papers matching the query and optionally downloads PDFs.
+
+        Parameters:
+            query (str): The search query.
+            results_per_page (Optional[int]): Number of search results to return per query (default is 10).
+            download_pdfs (bool): Whether to download PDFs of the search results.
+            pdf_directory (Optional[str]): Directory where PDFs should be saved.
+
+        Returns:
+            List[Dict[str, str]]: A list of search results, each containing a title, link, snippet, and optional content if PDF is downloaded.
+        """
+        logging.info(f"Performing ArXiv search for query: {query}")
+
+        # Base API query URL
+        base_url = 'http://export.arxiv.org/api/query?'
+        search_query = urllib.parse.quote(query)
+        start = 0
+        max_results = results_per_page
+        query_str = f'search_query={search_query}&start={start}&max_results={max_results}'
+
+        # Perform a GET request using the base_url and query
+        try:
+            response = urllib.request.urlopen(base_url + query_str).read()
+        except Exception as e:
+            logging.error(f"Error fetching data from arXiv API: {str(e)}")
+            return []
+
+        # Parse the response using feedparser
+        feed = feedparser.parse(response)
+
+        results = []
+        # Run through each entry, and collect information
+        for entry in feed.entries:
+            paper_info = {
+                "title": entry.title,
+                "url": entry.id,
+                "snippet": entry.summary,
+                "published": entry.published,
+                "authors": ", ".join(author.name for author in entry.authors),
+                "abstract": entry.summary,
+                "content": ""
+            }
+
+            # Download and extract PDF content if requested
+            if download_pdfs and pdf_directory:
+                pdf_path = f"{pdf_directory}/{entry.id.split('/')[-1]}.pdf"
+                try:
+                    # Download the PDF
+                    urllib.request.urlretrieve(entry.id.replace('/abs/', '/pdf/'), pdf_path)
+                    # Extract text from the downloaded PDF
+                    with fitz.open(pdf_path) as pdf_file:
+                        pdf_text = ''
+                        for page_num in range(len(pdf_file)):
+                            pdf_text += pdf_file.load_page(page_num).get_text() + '\n'
+                    paper_info["content"] = pdf_text
+                except Exception as e:
+                    logging.error(f"Failed to download or extract content from PDF for paper '{entry.title}': {str(e)}")
+
+            results.append(paper_info)
+
+        logging.info(f"ArXiv search successful for query: {query}")
+        return results
+
+    def clone(self):
+        """
+        Creates a clone of the ArxivSearchRetrieveAndSaveTool instance.
+
+        Returns:
+            ArxivSearchRetrieveAndSaveTool: A new instance of ArxivSearchRetrieveAndSaveTool.
+        """
+        return ArxivSearchRetrieveAndSaveTool()
+
+from medium_api import Medium
+
+class MediumSearchRetrieveAndSaveTool:
+    """
+    Class Name: MediumSearchRetrieveAndSaveTool
+    Description: Searches Medium for articles, retrieves content, and saves the result to a file.
+
+    Attributes:
+        name (str): The name of the tool.
+        description (str): A brief description of what the tool does.
+        parameters (str): The parameters that can be passed to the tool.
+
+    Methods:
+        _run(queries, directory, filename):
+            Executes the search on Medium, retrieves the content, and saves it to the specified file.
+
+        clone():
+            Returns a new instance of MediumSearchRetrieveAndSaveTool with the same configuration.
+    """
+    name: str = "MediumSearchRetrieveAndSaveTool"
+    description: str = "Searches Medium for articles, retrieves content, and saves the result to a file in a specified directory."
+    parameters: str = "Mandatory: queries (list of queries), directory (str), filename (str)"
+
+    def __init__(self, api_key: str):
+        self.medium = Medium(api_key)
+
+    def _run(
+        self,
+        queries: List[str] = None,
+        directory: str = None,
+        filename: str = None
+    ) -> Tuple[str, bool]:
+        logging.info(f"Running MediumSearchRetrieveAndSaveTool with queries: {queries}")
+
+        if not queries or len(queries) == 0:
+            raise ValueError("At least one query must be provided")
+        if not directory:
+            raise ValueError("A directory must be provided")
+        if not filename:
+            raise ValueError("A filename must be provided")
+
+        # Collect search results for each query using multithreading
+        all_search_results = []
+        with ThreadPoolExecutor() as executor:
+            future_to_query = {
+                executor.submit(self.medium_search, query=query): query
+                for query in queries
+            }
+            for future in as_completed(future_to_query):
+                query = future_to_query[future]
+                try:
+                    results = future.result()
+                    all_search_results.append(results)
+                except Exception as e:
+                    logging.error(f"Medium search failed for query '{query}' with error: {str(e)}")
+                    all_search_results.append([])
+
+        # Interleave the results
+        interleaved_results = []
+        for result_tuple in zip(*all_search_results):
+            for result in result_tuple:
+                if result is not None:
+                    interleaved_results.append(result)
+
+        # Deduplicate results based on URLs
+        unique_results = {result['url']: result for result in interleaved_results}
+        logging.info(f"URLs:\n {unique_results}\n")
+
+        if not unique_results:
+            logging.warning("No valid content retrieved from the search results.")
+            return "No valid content retrieved from the search results.", False
+
+        # Convert the list to JSON
+        full_content = f"The result of my research is in the next JSON list with the source URL and the content in each finding:\n\n{json.dumps(list(unique_results.values()), indent=4)}"
+        task_completed = True
+
+        # Save the retrieved content to a file
+        try:
+            save_result, save_completed = AppendToFileTool()._run(txt=full_content, filename=filename, directory=directory)
+            if save_completed:
+                logging.info(f"Content successfully saved to {save_result}")
+                return f"Content successfully saved to {save_result}", True
+            else:
+                logging.error("Failed to save content to file.")
+                return "Failed to save content to file.", False
+        except Exception as e:
+            logging.error(f"Error during saving to file: {str(e)}")
+            return f"An error occurred during saving to file: {str(e)}", False
+
+    def medium_search(self, query: str) -> List[Dict[str, str]]:
+        """
+        Searches Medium for articles matching the query.
+
+        Parameters:
+            query (str): The search query.
+
+        Returns:
+            List[Dict[str, str]]: A list of search results, each containing a title, link, snippet, and full content.
+        """
+        logging.info(f"Performing Medium search for query: {query}")
+
+        user = self.medium.user(username=query)
+        user.fetch_articles()
+
+        results = []
+        for article in user.articles:
+            article_info = {
+                "title": article.title,
+                "url": article.url,
+                "snippet": article.subtitle,
+                "content": article.content
+            }
+            results.append(article_info)
+
+        logging.info(f"Medium search successful for query: {query}")
+        return results
+
+    def clone(self):
+        """
+        Creates a clone of the MediumSearchRetrieveAndSaveTool instance.
+
+        Returns:
+            MediumSearchRetrieveAndSaveTool: A new instance of MediumSearchRetrieveAndSaveTool.
+        """
+        return MediumSearchRetrieveAndSaveTool(api_key=self.medium.api_key)
 
 class MicrosoftNewsSearchRetrieveAndSaveTool(BaseSearchTool):
     """
@@ -723,8 +1025,8 @@ class MicrosoftNewsSearchRetrieveAndSaveTool(BaseSearchTool):
         if results:
             # Convert the list to JSON
             full_content = f"The result of my research is in the next JSON list with the source URL and the content in each finding:\n\n{json.dumps(results, indent=4)}"
- 
-            # Save the retrieved content to a file
+
+            # Save the retrieved content to a file (moved outside of the threads for thread safety)
             try:
                 save_result, save_completed = AppendToFileTool()._run(txt=full_content, filename=filename, directory=directory)
                 if save_completed:

@@ -20,6 +20,8 @@ from tools.search_tool import (
     MicrosoftNewsSearchRetrieveAndSaveTool,
     SearchRetrieveAndSaveTool,
     CoreSearchRetrieveAndSaveTool,
+    MediumSearchRetrieveAndSaveTool,
+    ArxivSearchRetrieveAndSaveTool,
     WikipediaSearchRetrieveAndSaveTool
 )
 
@@ -66,11 +68,13 @@ class RAGIndexerTool:
         
         # Inicializáljuk a kereső toolokat
         self.search_tools = [
+            MicrosoftNewsSearchRetrieveAndSaveTool(),
+            ArxivSearchRetrieveAndSaveTool(),
+            # MediumSearchRetrieveAndSaveTool(),
             SearchRetrieveAndSaveTool(),
             CoreSearchRetrieveAndSaveTool(),
             PubMedSearchRetrieveAndSaveTool(),
-            MicrosoftNewsSearchRetrieveAndSaveTool(),
-            WikipediaSearchRetrieveAndSaveTool()
+             WikipediaSearchRetrieveAndSaveTool()
         ]
         
         # Flag az index betöltésének ellenőrzésére
@@ -810,10 +814,10 @@ class RAGSearchAndSaveTool:
     A class that combines the indexing and search steps, and saves the results to a file.
     """
     name: str = "RAGSearchAndSaveTool"
-    description: str = "Searches the internet using search engines, retrieves content, and saves the result to a file in a specified directory."
+    description: str = "Searches tool searching either on the internet using search engines or in local files stored in a directory, retrieves content, and saves the result to a file in a specified directory."
     parameters: str = (
         "Mandatory: queries (list of queries), languages (list of language codes), "
-        "directory (str), filename (str). "
+        "directory (str), filename (str) , with_net (bool to define ig nned to search on the internet) "
         "Optional: url_file, country, geolocation, results_per_page, date_range "
         "(e.g., 'w' for last week, 'm' for last month, 'y' for last year)"
     )
@@ -826,7 +830,7 @@ class RAGSearchAndSaveTool:
         self.indexer_tool = None
         self.search_tool = None
 
-    def _run(self, queries: List[str], languages: List[str], directory: str, filename: str, top_k: int = 10, **kwargs):
+    def _run(self, queries: List[str], languages: List[str], directory: str, filename: str, with_net: bool = True, top_k: int = 10, **kwargs):
         """
         1. Creates the indexer and search tools using the given directory.
         2. Indexes new documents based on queries and languages.
@@ -837,6 +841,7 @@ class RAGSearchAndSaveTool:
         :param languages: The list of language codes to use for the search.
         :param directory: The directory where the index and doc_ids will be stored.
         :param filename: The name of the file to save the search results.
+        :param with_net: Should it search on the internet?
         :param top_k: The number of top documents to retrieve in the semantic search.
         :param kwargs: Optional arguments for the search (e.g., url_file, country, geolocation).
         """
@@ -849,7 +854,11 @@ class RAGSearchAndSaveTool:
             os.makedirs(directory)
 
         # 1. Create the indexer and search tools
-        self.indexer_tool = RAGIndexerTool(index_path=index_path, doc_ids_path=doc_ids_path)
+        if with_net :
+            self.indexer_tool = RAGIndexerTool(index_path=index_path, doc_ids_path=doc_ids_path)
+        else: 
+            self.indexer_tool = RAGIndexerToolWithoutNet(index_path=index_path, doc_ids_path=doc_ids_path)
+
         self.search_tool = RAGSemanticSearchTool(index_path=index_path, doc_ids_path=doc_ids_path, top_k=top_k)
 
         # 2. Indexing step with queries and languages

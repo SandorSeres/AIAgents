@@ -653,6 +653,7 @@ Correct the JSON and reply with a valid JSON format.
                             except Exception as e:
                                 logging.error(f"({self.name}): Error applying pre-processing tool {tool_name}: {e}", exc_info=True)
                                 return {"error": "Error applying pre-processing tool."}, True
+                        pass
                     else:
                         logging.info(f"{tool.name} Did not returned any info, using modell internal knowledge.")
                         await self.update_messages({'role': 'user', 'content': f"Because {tool.name} did not returned any information, now use modell internal knowledge."}, MEDIUM_PRIORITY)

@@ -1,86 +1,89 @@
 version: '1.0'
 
 variables:
-  word_count: '2000'
-  inputs:
-    language: Hungarian
-    topic: |
-      Create a question and ansvere loop where the HumanAssistant ask a question and the ResearchAssistant find the answere on the internet
-    roles: [
-      {"HumanAssistant": "Human assistant who ask a question"},
-      {"ResearchAssistant": "Assistant with expertise in conducting research and gathering information by searching in the internet"},
-    ]
-    assistant_critic_map:
-      none
-  steps:
-    chat:
-      participants: ["HumanAssistant", "ResearchAssistant"]
-      objective: "ResourceAssistant answere the question from the HumanAssistant"
-      output: "the Q/A process."
+  project_name: 'Document Indexing and Querying System'
+  directory_to_index: './documents'
+  roles:
+    - {"DocumentIndexer": "Responsible for indexing all documents in the directory specified by {directory_to_index} and maintaining the index."}
+    - {"QueryResponder": "Responsible for answering questions based on the indexed documents."}
+    - {"HumanAssistant": "Responsible for posing questions and ending the process with <QUERY_DONE> when satisfied."}
+
+steps:
+  Query and Answer Process:
+    participants: ["HumanAssistant", "DocumentIndexer", "QueryResponder"]
+    objective: "Answer questions based on indexed documents from {directory_to_index} until <QUERY_DONE> message is sent."
+    output: "Provide responses to queries."
 
 agents:
   ChatManager:
     type: "CAMELAgent"
-    role_name: "Chat Coordinator"
-    role_description: "Chat manager responsible for coordinating question answer process with the works of assistants"
-    llm : "openai"
+    role_name: "Project Coordinator"
+    role_description: "Manages the interaction between agents and ensures the human agent's questions are answered using the document index."
+    llm: "openai"
     system_prompt: |
-      You are responsible for managing the question answare process. Your tasks include:
-      - Let the HumanAssistant to ask a question.
-      - Process each question one by one in sequence.
-      - For each question, coordinate the network resource, feedback generation processes before moving on to let the HumanAgent to create a question.
-      - Ensure that all agents perform their roles correctly and on time.
+      You are the coordinator managing task delegation and communication among agents.
+      Your role is to oversee the interaction where the HumanAssistant asks questions, and the QueryResponder provides answers based on documents indexed by the DocumentIndexer.
 
-      Begin by instructing the HumanAssistant to ask a question. Then Let the ResearchAssistant to answer in a cycle:
-      1. HumanAssistant → 
-      2. ResearchAssistant → 
+      - Begin by asking HumanAssistant to define the first question.
+      - After each question, instruct the QueryResponder to search the indexed documents and provide an answer.
+      - Ensure that DocumentIndexer has indexed the documents from {directory_to_index} before starting.
+      - Repeat the process until the HumanAssistant sends a <QUERY_DONE> message, which concludes the session.
 
-      Ensure that after processing each question, you continue with let the HumanAgent to ask.
+      Use this format to manage the workflow:
 
-      Use the following format to track tasks:
-      
       {
-        "Question": "<DESCRIPTION_OF_NEXT_TASK>",
-        "Thought": "<YOUR_THOUGHT_PROCESS>",
-        "Action": "<SPECIFIC_ASSISTANT_TO_INSTRUCT>",
-        "Action Input": "<DETAILED_INSTRUCTION_FOR_ASSISTANT>",
-        "Observation": "<RESULT_OF_ASSISTANT'S_WORK>"
+        "Question": "<NEXT_STEP>",
+        "Thought": "<REASONING>",
+        "Action": "<ASSISTANT_TO_INSTRUCT>",
+        "Action Input": "<INSTRUCTION_TO_ASSISTANT>",
+        "Observation": "<RESULT_FROM_ASSISTANT>"
       }
-
-      Continue processing until The HumanAgent not saying <DONE>. Then respond with <CAMEL_TASK_DONE>.
-      When responding with your Final Answer, Be polite and say obly goodby till next time.
-
-  ResearchAssistant:
-    type: "CAMELAgent"
-    role_name: "Research Assistant"
-    role_description: "Assistant with expertise in conducting research and gathering information all the time from the internet"
-    llm : "openai"
-    system_prompt: |
-      Your task is to assist with gathering accurate and up-to-date information for the topic provided by the ChatManager.
-      You must perform thorough research on the internet and provide detailed responses to the instructions given.
-      Always prioritize reliable and credible sources.
-      Make sure the information is relevant and well-organized.
-      You should respond with the gathered information in a clear and concise manner.
-      Do not make assumptions; always rely on factual data.
-      Remember: all the time also provide the sources of your information as a URL.
-      The content should be at least 1000 tokens or the max defined by the platform.
-      Do not add anything else other than your solution to my instruction.
-      You are never supposed to ask me any questions; you only answer questions.
-      You are never supposed to reply with a vague solution. Explain your solutions.
-      Your solution must be declarative sentences and in simple present tense.
-      Unless I say the task is completed, you should always start with:
-
-      Solution: <YOUR_SOLUTION>
-
-      <YOUR_SOLUTION> should be specific and provide preferable implementations and examples for task-solving.
-    tools: 
-      pre-processing:
-        - 'SearchAndRetrieveTool'
 
   HumanAssistant:
     type: "HumanAgent"
     role_name: "Human Assistant"
-    role_description: "Assistant who ask a question"
- 
+    role_description: "Poses questions and ends the process with <QUERY_DONE> message when satisfied."
+
+  DocumentIndexer:
+    type: "CAMELAgent"
+    role_name: "Document Indexer"
+    role_description: "Indexes all documents in the specified {directory_to_index} and maintains the index for query searching."
+    llm: "openai"
+    system_prompt: |
+      You are a document indexer. Your task is to index all documents in the {directory_to_index} and create a searchable index for answering questions.
+      You should process all files in the directory and ensure they are included in the index.
+
+      Store the indexed data in "./{session_id}/index.md".
+
+      Unless instructed otherwise, always begin with:
+
+      Solution: <INDEXED_DOCUMENTS>
+
+      Where <INDEXED_DOCUMENTS> represents a list of documents indexed.
+
+    tools:
+      pre-processing:
+        - RAGIndexerToolWithoutNet
+
+  QueryResponder:
+    type: "CAMELAgent"
+    role_name: "Query Responder"
+    role_description: "Searches the indexed documents and answers questions posed by the HumanAssistant."
+    llm: "openai"
+    system_prompt: |
+      You are a responder whose task is to answer the questions asked by the HumanAssistant based on the indexed documents.
+      
+      Always search the index stored in "./{session_id}/index.md" and return the most relevant answer to the question posed by the HumanAssistant.
+
+      Unless instructed otherwise, always begin with:
+
+      Solution: <ANSWER>
+
+      Where <ANSWER> should be the specific answer to the query.
+
+    tools:
+      pre-processing:
+        - RAGSemanticSearchTool
+
 interaction:
-  steps: 30
+  steps: 50

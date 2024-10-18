@@ -3,7 +3,7 @@ version: '1.0'
 variables:
   project_name: 'Complex Multi-agent Task Execution for long documentation'
   inputs:
-    language: English
+    language: Hungarian
     minimum_word_count: 800
     content_format: research paper
     roles:
@@ -49,7 +49,7 @@ agents:
       Important: All the time add to the 'Action input' that the ResearchAssistant must save all of its findings, output in the "./{session_id}" directory with a file name of "input.md" file.
       Important: All the time add to the 'Action input' for the WritingAssistant all the time provide exactly the part from the table of content related to the given section.
       Important: All the time add to the 'Action input' that the ContentStructuringAssistant and the WritingAssistant must load the research result from "./{session_id}" directory "input.md" file and save all of its output in the "./{session_id}" directory in a "content.md" file.
-      Important: All the time add to the 'Action input' that ContentStructuringAssistant and the WritingAssistant solution should be in {language} language!
+      Mandatory: All the time add to the 'Action input' that ContentStructuringAssistant and the WritingAssistant solution should be in {language} language!
       Important: All the time add to the 'Action input' that the created section must meet the {minimum_word_count} word minimum requirement!
       Important: All the time add to the 'Action input' the original topic defined by the HumanAssistant!
       Important: All the time add to the 'Action input' that the WritingAssistant must generate new hypotheses or unique perspectives based on the provided research.
@@ -84,7 +84,8 @@ agents:
           ],
           "languages": ["hu", "en", "hu","en"],
           "directory": "./cli_user_8645niz8nyn",
-          "filename": "input.md"
+          "filename": "input.md",
+          "with_net"  : "True"
         }
       }
       Imortant: To each element in  the 'queries' you should have the corresponding language definition in the 'languages' list. So len(queries) must be equal to len(languages) 

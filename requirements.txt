@@ -17,7 +17,11 @@ tools
 transformers
 html2text
 PyPDF2
+arxiv
+medium_api
+pymupdf
 python-pptx
+docx
 scrapy
 playwright
 
